@@ -1,5 +1,5 @@
 'use client';
-
+import { useAuth } from '@/contexts/AuthContext';
 import { useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -36,6 +36,7 @@ function CoachAvatar({ initials, color, size = 40 }) {
 }
 
 export function LandingClient({ categories, coaches, programs }) {
+  const { isAuthenticated, dbUser } = useAuth();
   const [enrollProg, setEnrollProg] = useState(null);
   const [enqProg, setEnqProg] = useState(null);
   const [form, setForm] = useState({ parentName: '', phone: '', childName: '', childAge: '', message: '' });
@@ -94,14 +95,28 @@ export function LandingClient({ categories, coaches, programs }) {
 
       {/* Membership */}
       <section className="px-5 pb-8">
-        <div className="max-w-2xl mx-auto bg-gradient-to-r from-teal-primary to-teal-600 rounded-2xl px-6 py-5 flex items-center justify-between flex-wrap gap-3 text-white">
-          <div>
-            <div className="text-[9px] font-bold uppercase tracking-wider opacity-70">One-Time Membership</div>
-            <div className="font-serif text-2xl">{fmt(MEMBERSHIP)}</div>
-          </div>
-          <Link href="/auth/signup" className="bg-white text-teal-primary px-5 py-2.5 rounded-xl font-bold text-sm hover:-translate-y-0.5 transition-all">
-            Get Started →
-          </Link>
+        <div className={`max-w-2xl mx-auto rounded-2xl px-6 py-5 flex items-center justify-between flex-wrap gap-3 text-white ${isAuthenticated && dbUser?.membershipPaid ? 'bg-gradient-to-r from-emerald-600 to-emerald-500' : 'bg-gradient-to-r from-teal-primary to-teal-600'}`}>
+          {isAuthenticated && dbUser?.membershipPaid ? (
+            <>
+              <div>
+                <div className="text-[9px] font-bold uppercase tracking-wider opacity-70">You&apos;re a Member ✓</div>
+                <div className="font-serif text-xl">Know a parent who&apos;d love this?</div>
+              </div>
+              <button onClick={() => { navigator.clipboard.writeText('https://skillpadi-b3nv.vercel.app'); alert('Link copied!'); }} className="bg-white text-emerald-700 px-5 py-2.5 rounded-xl font-bold text-sm hover:-translate-y-0.5 transition-all">
+                Share with Friends 🔗
+              </button>
+            </>
+          ) : (
+            <>
+              <div>
+                <div className="text-[9px] font-bold uppercase tracking-wider opacity-70">One-Time Membership</div>
+                <div className="font-serif text-2xl">{fmt(MEMBERSHIP)}</div>
+              </div>
+              <Link href={isAuthenticated ? "/dashboard/parent" : "/auth/signup"} className="bg-white text-teal-primary px-5 py-2.5 rounded-xl font-bold text-sm hover:-translate-y-0.5 transition-all">
+                {isAuthenticated ? 'Pay Now →' : 'Get Started →'}
+              </Link>
+            </>
+          )}
         </div>
       </section>
 

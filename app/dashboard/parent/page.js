@@ -32,6 +32,24 @@ export default function ParentDashboard() {
     })();
   }, [isAuthenticated, authFetch]);
 
+  // Verify payment on redirect from Paystack
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('reference') || params.get('trxref');
+    if (!ref) return;
+
+    (async () => {
+      try {
+        const res = await authFetch(`/api/payments/verify?reference=${ref}`);
+        if (res.ok) {
+          window.history.replaceState({}, '', '/dashboard/parent');
+          window.location.reload();
+        }
+      } catch (e) { console.error('Payment verification failed:', e); }
+    })();
+  }, [isAuthenticated, authFetch]);
+
   if (loading) return <div className="min-h-screen bg-cream flex items-center justify-center"><p className="text-slate-400 text-sm">Loading...</p></div>;
   if (!isAuthenticated) return null;
 
