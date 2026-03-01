@@ -17,7 +17,7 @@ export const GET = handler(async (request) => {
 
   await dbConnect();
 
-  const payment = await Payment.findOne({ reference }).lean();
+  const payment = await Payment.findOne({ reference: String(reference) }).lean();
   if (!payment) return error('Payment not found', 404);
   if (payment.status === 'success') return success({ status: 'already_processed', payment });
 
