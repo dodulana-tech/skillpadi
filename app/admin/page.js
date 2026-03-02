@@ -92,6 +92,12 @@ export default function AdminPage() {
     }
   };
 
+  const deleteEnquiry = async (id) => {
+    if (!confirm('Delete this enquiry permanently?')) return;
+    const res = await authFetch(`/api/enquiries/${id}`, { method: 'DELETE' });
+    if (res.ok) { setEnquiries((prev) => prev.filter((e) => e._id !== id)); toast.success('Enquiry deleted'); }
+  };
+
   const updateEnrollment = async (id, update) => {
     const res = await authFetch(`/api/enrollments/${id}`, { method: 'PATCH', body: JSON.stringify(update) });
     if (res.ok) {
@@ -99,6 +105,58 @@ export default function AdminPage() {
       setEnrollments((prev) => prev.map((e) => e._id === id ? { ...e, ...data.enrollment } : e));
       toast.success('Enrollment updated');
     }
+  };
+
+  const toggleCoachActive = async (id, current) => {
+    const res = await authFetch(`/api/coaches/${id}`, { method: 'PUT', body: JSON.stringify({ isActive: !current }) });
+    if (res.ok) {
+      setCoaches((prev) => prev.map((c) => c._id === id ? { ...c, isActive: !current } : c));
+      toast.success(`Coach ${!current ? 'activated' : 'deactivated'}`);
+    }
+  };
+
+  const toggleProgramActive = async (id, current) => {
+    const res = await authFetch(`/api/programs/${id}`, { method: 'PUT', body: JSON.stringify({ isActive: !current }) });
+    if (res.ok) {
+      setPrograms((prev) => prev.map((p) => p._id === id ? { ...p, isActive: !current } : p));
+      toast.success(`Program ${!current ? 'activated' : 'deactivated'}`);
+    }
+  };
+
+  const updateProgramSpots = async (id, spotsTotal) => {
+    const newTotal = prompt('New total spots:', spotsTotal);
+    if (!newTotal || isNaN(newTotal)) return;
+    const res = await authFetch(`/api/programs/${id}`, { method: 'PUT', body: JSON.stringify({ spotsTotal: Number(newTotal) }) });
+    if (res.ok) {
+      setPrograms((prev) => prev.map((p) => p._id === id ? { ...p, spotsTotal: Number(newTotal) } : p));
+      toast.success('Spots updated');
+    }
+  };
+
+  const updateProgramPrice = async (id, current) => {
+    const newPrice = prompt('New price per session (₦):', current);
+    if (!newPrice || isNaN(newPrice)) return;
+    const res = await authFetch(`/api/programs/${id}`, { method: 'PUT', body: JSON.stringify({ pricePerSession: Number(newPrice) }) });
+    if (res.ok) {
+      setPrograms((prev) => prev.map((p) => p._id === id ? { ...p, pricePerSession: Number(newPrice) } : p));
+      toast.success('Price updated');
+    }
+  };
+
+  const changeUserRole = async (id, currentRole) => {
+    const newRole = prompt('New role (parent, coach, school, community, admin):', currentRole);
+    if (!newRole || !['parent', 'coach', 'school', 'community', 'admin'].includes(newRole)) { if (newRole) toast.error('Invalid role'); return; }
+    const res = await authFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ role: newRole }) });
+    if (res.ok) {
+      setUsers((prev) => prev.map((u) => u._id === id ? { ...u, role: newRole } : u));
+      toast.success(`Role changed to ${newRole}`);
+    }
+  };
+
+  const deleteCoach = async (id) => {
+    if (!confirm('Deactivate this coach?')) return;
+    const res = await authFetch(`/api/coaches/${id}`, { method: 'DELETE' });
+    if (res.ok) { setCoaches((prev) => prev.map((c) => c._id === id ? { ...c, isActive: false } : c)); toast.success('Coach deactivated'); }
   };
 
   if (loading || !isAdmin) return (
@@ -330,6 +388,7 @@ export default function AdminPage() {
                       {enq.status === 'contacted' && <button onClick={() => updateEnquiry(enq._id, 'enrolled')} className="btn-primary btn-sm text-[10px]">Mark Enrolled ✓</button>}
                       <a href={`https://wa.me/${(enq.phone || '').replace(/^0/, '234')}?text=${encodeURIComponent(`Hi ${enq.parentName}, this is SkillPadi!`)}`} target="_blank" rel="noopener noreferrer" className="btn-sm bg-[#25D366] text-white rounded-lg text-[10px] font-semibold px-2.5 py-1">💬 WhatsApp</a>
                       {!['declined', 'enrolled'].includes(enq.status) && <button onClick={() => updateEnquiry(enq._id, 'declined')} className="btn-outline btn-sm text-[10px] text-red-500 border-red-200">Decline</button>}
+                      <button onClick={() => deleteEnquiry(enq._id)} className="btn-sm text-[10px] text-slate-400 hover:text-red-500">🗑️</button>
                     </div>
                   </div>
                 ))}
@@ -395,6 +454,7 @@ export default function AdminPage() {
                     <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Children</th>
                     <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Membership</th>
                     <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Joined</th>
+                    <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Actions</th>
                   </tr></thead>
                   <tbody>
                     {users.map((u) => (
@@ -404,6 +464,11 @@ export default function AdminPage() {
                         <td className="p-3">{u.children?.length > 0 ? u.children.map((c) => `${c.name} (${c.age})`).join(', ') : '—'}</td>
                         <td className="p-3"><span className={`badge ${u.membershipPaid ? 'badge-green' : 'badge-amber'}`}>{u.membershipPaid ? 'Active' : 'Pending'}</span></td>
                         <td className="p-3 text-[10px] text-slate-400">{new Date(u.createdAt).toLocaleDateString()}</td>
+                        <td className="p-3">
+                          <button onClick={() => changeUserRole(u._id, u.role)} className="btn-outline btn-sm text-[9px]">
+                            {u.role} ✎
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -436,7 +501,10 @@ export default function AdminPage() {
                       </div>
                       <div className="text-[10px] text-slate-400">{c.whatsapp}</div>
                       <div className="flex gap-1.5 mt-2">
-                        <Link href={`/coaches/${c.slug}`} className="btn-outline btn-sm text-[9px]">View Profile</Link>
+                        <Link href={`/coaches/${c.slug}`} className="btn-outline btn-sm text-[9px]">View</Link>
+                        <button onClick={() => toggleCoachActive(c._id, c.isActive)} className={`btn-sm text-[9px] rounded-lg font-semibold px-2 py-1 ${c.isActive ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-600 border border-green-200'}`}>
+                          {c.isActive ? 'Deactivate' : 'Activate'}
+                        </button>
                         <span className={`badge ${c.isActive ? 'badge-green' : 'badge-gray'}`}>{c.isActive ? 'Active' : 'Inactive'}</span>
                       </div>
                     </div>
@@ -460,6 +528,7 @@ export default function AdminPage() {
                     <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Capacity</th>
                     <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Price/Session</th>
                     <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Revenue Pot.</th>
+                    <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Actions</th>
                   </tr></thead>
                   <tbody>
                     {programs.map((p) => {
@@ -475,6 +544,15 @@ export default function AdminPage() {
                           </td>
                           <td className="p-3 font-semibold">{fmt(p.pricePerSession)}</td>
                           <td className="p-3 font-semibold text-emerald-700">{fmt(p.pricePerSession * p.sessions * p.spotsTotal)}</td>
+                          <td className="p-3">
+                            <div className="flex gap-1 flex-wrap">
+                              <button onClick={() => updateProgramSpots(p._id, p.spotsTotal)} className="btn-outline btn-sm text-[9px]">Spots</button>
+                              <button onClick={() => updateProgramPrice(p._id, p.pricePerSession)} className="btn-outline btn-sm text-[9px]">Price</button>
+                              <button onClick={() => toggleProgramActive(p._id, p.isActive)} className={`btn-sm text-[9px] rounded-lg font-semibold px-2 py-1 ${p.isActive ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-600 border border-green-200'}`}>
+                                {p.isActive ? 'Off' : 'On'}
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       );
                     })}
