@@ -76,6 +76,19 @@ const CoachSchema = new mongoose.Schema({
 
   isActive: { type: Boolean, default: true },
   featuredOrder: { type: Number, default: 0 }, // for homepage ordering
+
+  // Referral & Trust Network
+  referredByCoachId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coach' }, // who referred this coach
+  referralCode: { type: String, unique: true, sparse: true },
+  referrals: [{                          // coaches this person referred
+    coachId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coach' },
+    date: Date,
+    status: { type: String, enum: ['pending', 'vetted', 'active', 'removed'], default: 'pending' },
+    bonusPaid: { type: Boolean, default: false },
+  }],
+  referralEarnings: { type: Number, default: 0 },  // total referral commission earned
+  trustScore: { type: Number, default: 50 },        // 0-100, starts at 50
+  // Trust score changes: +10 for each vetted referral, -20 if referral gets complaint, +5 per clean term
 }, {
   timestamps: true,
 });

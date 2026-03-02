@@ -36,6 +36,7 @@ export default function Navbar() {
           <Link href="/#programs" className="hover:text-slate-900 transition-colors">Programs</Link>
           <Link href="/#coaches" className="hover:text-slate-900 transition-colors">Coaches</Link>
           <Link href="/shop" className="hover:text-slate-900 transition-colors">Shop</Link>
+          <Link href="/blog" className="hover:text-slate-900 transition-colors">Blog</Link>
           <Link href="/#how" className="hover:text-slate-900 transition-colors">How It Works</Link>
         </div>
 
@@ -60,6 +61,7 @@ export default function Navbar() {
                   </div>
                   <Link href={dashLink} onClick={() => setDropdownOpen(false)} className="block px-3 py-2 text-xs text-slate-600 hover:bg-slate-50">Dashboard</Link>
                   {isAdmin && <Link href="/admin" onClick={() => setDropdownOpen(false)} className="block px-3 py-2 text-xs text-slate-600 hover:bg-slate-50">Admin Panel</Link>}
+                  <Link href="/" onClick={() => setDropdownOpen(false)} className="block px-3 py-2 text-xs text-slate-600 hover:bg-slate-50">Home</Link>
                   <button onClick={() => { signOut(); setDropdownOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50">Sign Out</button>
                 </div>
               )}
@@ -88,6 +90,7 @@ export default function Navbar() {
           <Link href="/#programs" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">Programs</Link>
           <Link href="/#coaches" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">Coaches</Link>
           <Link href="/shop" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">Shop</Link>
+          <Link href="/blog" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">Blog</Link>
           <Link href="/#how" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">How It Works</Link>
         </div>
       )}
