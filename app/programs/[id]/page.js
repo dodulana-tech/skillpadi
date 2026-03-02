@@ -1,6 +1,7 @@
 import dbConnect from '@/lib/db';
 import Program from '@/models/Program';
 import Coach from '@/models/Coach';
+import '@/models/Category'; // register Category for populate
 import Navbar from '@/components/Navbar';
 import { ProgramDetailClient } from './ProgramDetailClient';
 import { notFound } from 'next/navigation';

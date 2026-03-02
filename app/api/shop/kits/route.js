@@ -2,6 +2,7 @@ import { handler, success, error, parseBody, validateBody } from '@/lib/api-util
 import { requireRole, isAuthError } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import { StarterKit } from '@/models/Shop';
+import '@/models/Category'; // register Category for populate
 
 export const GET = handler(async () => {
   await dbConnect();

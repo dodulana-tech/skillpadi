@@ -2,6 +2,7 @@ import { handler, success, error, isObjectIdOrSlug, parseBody } from '@/lib/api-
 import { requireRole, isAuthError } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import Coach from '@/models/Coach';
+import '@/models/Category'; // register Category for populate
 
 // GET /api/coaches/[id] — Public
 export const GET = handler(async (request, { params }) => {

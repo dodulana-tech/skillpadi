@@ -2,6 +2,7 @@ import { handler, success, error, isObjectIdOrSlug, parseBody } from '@/lib/api-
 import { requireRole, isAuthError } from '@/lib/auth';
 import dbConnect from '@/lib/db';
 import Program from '@/models/Program';
+import '@/models/Category'; // register Category for populate
 
 export const GET = handler(async (request, { params }) => {
   const { id } = await params;

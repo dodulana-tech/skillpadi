@@ -7,6 +7,12 @@ import Enrollment from '@/models/Enrollment';
 import User from '@/models/User';
 import { verifyPayment } from '@/lib/paystack';
 
+// Mongoose model methods from JS files confuse TS overload resolution; cast once to keep type-checking quiet.
+const PaymentModel = Payment as any;
+const UserModel = User as any;
+const ProgramModel = Program as any;
+const EnrollmentModel = Enrollment as any;
+
 export const GET = handler(async (request) => {
   const auth = await authenticate(request);
   if (isAuthError(auth)) return auth;
@@ -18,7 +24,7 @@ export const GET = handler(async (request) => {
   await dbConnect();
 
   const filter = { reference: String(reference) };
-  const payment = await Payment.findOne(filter).lean();
+  const payment = await PaymentModel.findOne(filter).lean();
   if (!payment) return error('Payment not found', 404);
   if (payment.status === 'success') return success({ status: 'already_processed', payment });
 
@@ -35,7 +41,7 @@ export const GET = handler(async (request) => {
   }
 
   // Update payment
-  await Payment.findByIdAndUpdate(payment._id, {
+  await PaymentModel.findByIdAndUpdate(payment._id, {
     status: 'success',
     paystackRef: String(verification.id || ''),
     channel: verification.channel,
@@ -47,27 +53,27 @@ export const GET = handler(async (request) => {
   if (Array.isArray(checkout)) {
     for (const item of checkout) {
       if (item.type === 'membership') {
-        await User.findByIdAndUpdate(payment.userId, {
+        await UserModel.findByIdAndUpdate(payment.userId, {
           membershipPaid: true,
           membershipDate: new Date(),
           membershipRef: reference,
         });
       }
       if (item.type === 'enrollment' && payment.webhookData?.programId) {
-        const existing = await Enrollment.findOne({
+        const existing = await EnrollmentModel.findOne({
           userId: payment.userId,
           programId: payment.webhookData.programId,
           childName: payment.webhookData.childName,
           status: { $in: ['pending', 'active'] },
         });
         if (!existing) {
-          const program = await Program.findOneAndUpdate(
+          const program = await ProgramModel.findOneAndUpdate(
             { _id: payment.webhookData.programId, $expr: { $lt: ['$spotsTaken', '$spotsTotal'] } },
             { $inc: { spotsTaken: 1 } },
             { new: true },
           );
           if (program) {
-            await Enrollment.create({
+            await EnrollmentModel.create({
               userId: payment.userId,
               childName: payment.webhookData.childName || 'Child',
               childAge: payment.webhookData.childAge,
@@ -84,7 +90,7 @@ export const GET = handler(async (request) => {
 
   // Also handle simple membership/enrollment payments
   if (payment.type === 'membership' && !checkout) {
-    await User.findByIdAndUpdate(payment.userId, {
+    await UserModel.findByIdAndUpdate(payment.userId, {
       membershipPaid: true,
       membershipDate: new Date(),
       membershipRef: reference,

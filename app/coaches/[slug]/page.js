@@ -1,6 +1,7 @@
 import dbConnect from '@/lib/db';
 import Coach from '@/models/Coach';
 import Program from '@/models/Program';
+import '@/models/Category'; // ensure Category model is registered before populate
 import Navbar from '@/components/Navbar';
 import Link from 'next/link';
 import { CoachProfileClient } from './CoachProfileClient';
