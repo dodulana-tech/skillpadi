@@ -132,10 +132,10 @@ export default function TournamentDetailClient({ tournament: init }) {
       )}
 
       {/* Sponsor */}
-      {tournament.sponsoredBy?.name && (
+      {tournament.sponsorId?.name && (
         <div className="card p-3 mb-4 flex items-center gap-3">
-          <div className="text-[9px] text-slate-400">Sponsored by</div>
-          <div className="font-semibold text-xs">{tournament.sponsoredBy.name}</div>
+          <div className="text-[9px] text-slate-400">{tournament.sponsorId.tagline || 'Sponsored by'}</div>
+          <div className="font-semibold text-xs">{tournament.sponsorId.name}</div>
         </div>
       )}
 

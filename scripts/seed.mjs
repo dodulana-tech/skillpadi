@@ -17,7 +17,7 @@ if (!MONGODB_URI) {
 const CategorySchema = new mongoose.Schema({
   name: String, slug: String, icon: String, color: String,
   description: String, active: { type: Boolean, default: true },
-  order: Number, sponsor: { name: String, tagline: String, logo: String },
+  order: Number, sponsorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Sponsor', default: null },
   city: { type: String, default: 'abuja' },
 }, { timestamps: true });
 
@@ -95,7 +95,7 @@ const TournamentSchema = new mongoose.Schema({
   type: String, description: String, venue: String, area: String, city: { type: String, default: 'abuja' },
   date: Date, registrationDeadline: Date, maxTeams: Number, maxPerTeam: Number,
   entryFee: { type: Number, default: 0 }, teams: [], results: [],
-  status: { type: String, default: 'upcoming' }, sponsoredBy: { name: String, logo: String },
+  status: { type: String, default: 'upcoming' }, sponsorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Sponsor', default: null },
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
@@ -127,10 +127,10 @@ async function seed() {
 
   // ── Categories ──
   const cats = await Category.insertMany([
-    { name: 'Swimming', slug: 'swimming', icon: '🏊', color: '#0891B2', description: 'Pool swimming at trusted hotel & club venues', order: 1, sponsor: { name: 'Speedo', tagline: 'Presented by Speedo' } },
+    { name: 'Swimming', slug: 'swimming', icon: '🏊', color: '#0891B2', description: 'Pool swimming at trusted hotel & club venues', order: 1 },
     { name: 'Football', slug: 'football', icon: '⚽', color: '#16A34A', description: 'Structured coaching on quality pitches', order: 2 },
     { name: 'Taekwondo', slug: 'taekwondo', icon: '🥋', color: '#DC2626', description: 'Discipline, fitness & self-defense', order: 3 },
-    { name: 'Piano & Music', slug: 'piano', icon: '🎹', color: '#7C3AED', description: 'Classical & contemporary with certified instructors', order: 4, sponsor: { name: 'Yamaha', tagline: 'Powered by Yamaha' } },
+    { name: 'Piano & Music', slug: 'piano', icon: '🎹', color: '#7C3AED', description: 'Classical & contemporary with certified instructors', order: 4 },
     { name: 'Tennis', slug: 'tennis', icon: '🎾', color: '#CA8A04', description: 'Court skills & competitive training', order: 5 },
     { name: 'Coding & Robotics', slug: 'coding', icon: '💻', color: '#2563EB', description: 'Scratch, Python & hardware for future builders', order: 6 },
   ]);
@@ -152,7 +152,7 @@ async function seed() {
   const coaches = await Coach.insertMany([
     { name: 'Coach Amaka Obi', slug: 'coach-amaka', initials: 'AO', title: 'Head Swimming Instructor', bio: 'Former national youth swimmer. 8 years coaching. STA Level 2 certified. Mother of two.', categoryId: cm.swimming, whatsapp: '2348012345678', vetting: { ...bv, coachingCert: v('verified', 'STA Level 2 — #ST-28194'), sportSafety: v('verified', 'Lifeguard (RLSS)') }, shieldLevel: 'certified', rating: 4.9, reviewCount: 47, yearsExperience: 8, ageGroups: '3-10', languages: ['English', 'Igbo', 'Pidgin'], venues: ['Transcorp Hilton Pool', 'Sheraton Pool'], trainingsCompleted: ['Session Reporting', 'Drop-off Protocol', 'Incident Reporting', 'Photo Privacy'], testimonials: [{ parent: 'Mrs. Adebayo', text: 'Timi was terrified of water. After 4 sessions he\'s jumping in.', rating: 5 }], qa: [{ question: 'My child is terrified of water?', answer: 'Most start nervous. Play-based approach, no forcing. By session 3 they\'re smiling.' }, { question: 'Can my driver drop off?', answer: 'Yes — pre-registered with photo ID. Come in person on day 1 to set up.' }], featuredOrder: 1 },
     { name: 'Coach Emeka Nwosu', slug: 'coach-emeka', initials: 'EN', title: 'Senior Swimming Coach', bio: 'Competitive swimmer turned coach. Stroke technique specialist. 6 years.', categoryId: cm.swimming, whatsapp: '2348023456789', vetting: { ...bv, coachingCert: v('verified', 'Swim England Level 2'), sportSafety: v('verified', 'Lifeguard (RLSS)') }, shieldLevel: 'certified', rating: 4.8, reviewCount: 32, yearsExperience: 6, ageGroups: '6-16', languages: ['English', 'Igbo'], venues: ['Sheraton Pool'], trainingsCompleted: ['Session Reporting', 'Drop-off Protocol', 'Communication Standards'], testimonials: [{ parent: 'Mr. Okafor', text: 'Chidera\'s freestyle improved dramatically.', rating: 5 }], qa: [{ question: 'Do you send progress updates?', answer: 'WhatsApp voice note or video after every session.' }], featuredOrder: 2 },
-    { name: 'Mrs. Folake Adeniyi', slug: 'mrs-folake', initials: 'FA', title: 'Piano Instructor', bio: 'B.A. Music UniLag. ABRSM Grade 8. 12 years teaching kids.', categoryId: cm.piano, whatsapp: '2348034567890', vetting: { ...bv, coachingCert: v('verified', 'B.A. Music, ABRSM Grade 8'), sportSafety: v('na') }, shieldLevel: 'certified', rating: 5.0, reviewCount: 28, yearsExperience: 12, ageGroups: '4-16', languages: ['English', 'Yoruba'], venues: ['Music Hub, Garki'], trainingsCompleted: ['Session Reporting', 'Communication Standards', 'Photo Privacy'], testimonials: [{ parent: 'Mrs. Akande', text: 'My son played his first piece at school after 2 months.', rating: 5 }], qa: [{ question: 'Need a piano at home?', answer: '61-key practice keyboard recommended. Yamaha PSS-A50 available in shop.' }], featuredOrder: 3 },
+    { name: 'Mrs. Folake Adeniyi', slug: 'mrs-folake', initials: 'FA', title: 'Piano Instructor', bio: 'B.A. Music UniLag. ABRSM Grade 8. 12 years teaching kids.', categoryId: cm.piano, whatsapp: '2348034567890', vetting: { ...bv, coachingCert: v('verified', 'B.A. Music, ABRSM Grade 8'), sportSafety: v('na') }, shieldLevel: 'certified', rating: 5.0, reviewCount: 28, yearsExperience: 12, ageGroups: '4-16', languages: ['English', 'Yoruba'], venues: ['Music Hub, Garki'], trainingsCompleted: ['Session Reporting', 'Communication Standards', 'Photo Privacy'], testimonials: [{ parent: 'Mrs. Akande', text: 'My son played his first piece at school after 2 months.', rating: 5 }], qa: [{ question: 'Need a piano at home?', answer: '61-key practice keyboard recommended. A starter keyboard is available in our shop.' }], featuredOrder: 3 },
     { name: 'Master Chinedu Chukwu', slug: 'master-chukwu', initials: 'CC', title: 'Taekwondo Master', bio: '3rd Dan Black Belt. Trained in South Korea. 15 years. Discipline-focused.', categoryId: cm.taekwondo, whatsapp: '2348045678901', vetting: { ...bv, coachingCert: v('verified', '3rd Dan — Kukkiwon Certified'), sportSafety: v('verified', 'NTF Registered') }, shieldLevel: 'certified', rating: 4.9, reviewCount: 63, yearsExperience: 15, ageGroups: '4-16', languages: ['English', 'Igbo', 'Pidgin'], venues: ['Sports Complex, Garki'], trainingsCompleted: ['Session Reporting', 'Drop-off Protocol', 'Incident Reporting', 'Communication Standards', 'Photo Privacy'], testimonials: [{ parent: 'Dr. Eze', text: 'Son\'s behaviour improved within weeks. Discipline is real.', rating: 5 }], qa: [{ question: 'Contact sparring?', answer: 'No contact for beginners. Light sparring at green belt with full gear.' }], featuredOrder: 4 },
     { name: 'Coach Bayo Adeyemi', slug: 'coach-bayo', initials: 'BA', title: 'Football Coach', bio: 'Former Shooting Stars youth. CAF C License. 10 years grassroots coaching.', categoryId: cm.football, whatsapp: '2348056789012', vetting: { ...bv, coachingCert: v('verified', 'CAF C License'), sportSafety: v('verified', 'NFF Registered') }, shieldLevel: 'certified', rating: 4.7, reviewCount: 38, yearsExperience: 10, ageGroups: '4-14', languages: ['English', 'Yoruba', 'Pidgin'], venues: ['Jabi Lake Turf', 'Wuse Zone 5 Pitch'], trainingsCompleted: ['Session Reporting', 'Drop-off Protocol', 'Incident Reporting'], testimonials: [{ parent: 'Mr. Aliyu', text: 'Finally structured football — not just 20 kids chasing a ball.', rating: 5 }], qa: [{ question: 'Proper coaching or kickabout?', answer: 'Structured sessions: warm-up, drill, small-sided game, cool-down.' }], featuredOrder: 5 },
     { name: 'Coach Ngozi Eze', slug: 'coach-ngozi', initials: 'NE', title: 'Football (Girls)', bio: 'Former Super Falcons U-17. 5 years coaching girls.', categoryId: cm.football, whatsapp: '2348067890123', vetting: { ...bv, coachingCert: v('verified', 'NFF D License + FIFA Grassroots'), insurance: v('pending') }, shieldLevel: 'verified', rating: 4.8, reviewCount: 15, yearsExperience: 5, ageGroups: '5-12', languages: ['English', 'Igbo'], venues: ['Jabi Lake Turf'], trainingsCompleted: ['Session Reporting', 'Drop-off Protocol'], testimonials: [{ parent: 'Mrs. Adekunle', text: 'A female coach my daughter looks up to.', rating: 5 }], qa: [{ question: 'Are sessions really girls-only?', answer: 'Yes — Saturday mornings exclusively girls. Safe space.' }], featuredOrder: 6 },
@@ -177,11 +177,11 @@ async function seed() {
 
   // ── Starter Kits ──
   const kits = await StarterKit.insertMany([
-    { name: 'Tadpole Kit', slug: 'tadpole-kit', categoryId: cm.swimming, icon: '🐸', contents: ['Kids swimsuit', 'Swim cap', 'Goggles', 'Towel', 'Waterproof bag', 'Arm floats'], individualPrice: 22500, kitPrice: 18000, brand: 'Speedo', sold: 23 },
-    { name: 'Dolphin Kit', slug: 'dolphin-kit', categoryId: cm.swimming, icon: '🐬', contents: ['Swimsuit', 'Cap', 'Goggles', 'Towel', 'Swim bag', 'Kickboard', 'Bottle'], individualPrice: 26000, kitPrice: 21000, brand: 'Speedo', sold: 18 },
+    { name: 'Tadpole Kit', slug: 'tadpole-kit', categoryId: cm.swimming, icon: '🐸', contents: ['Kids swimsuit', 'Swim cap', 'Goggles', 'Towel', 'Waterproof bag', 'Arm floats'], individualPrice: 22500, kitPrice: 18000, sold: 23 },
+    { name: 'Dolphin Kit', slug: 'dolphin-kit', categoryId: cm.swimming, icon: '🐬', contents: ['Swimsuit', 'Cap', 'Goggles', 'Towel', 'Swim bag', 'Kickboard', 'Bottle'], individualPrice: 26000, kitPrice: 21000, sold: 18 },
     { name: 'Striker Kit', slug: 'striker-kit', categoryId: cm.football, icon: '⚡', contents: ['Boots (moulded)', 'Shin guards', 'Socks', 'Bottle', 'Training bib', 'Bag'], individualPrice: 22000, kitPrice: 17000, sold: 31 },
     { name: 'Warrior Kit', slug: 'warrior-kit', categoryId: cm.taekwondo, icon: '🔥', contents: ['Dobok', 'White belt', 'Mouth guard', 'Bottle', 'Bag'], individualPrice: 15000, kitPrice: 12000, sold: 14 },
-    { name: 'Keys Kit', slug: 'keys-kit', categoryId: cm.piano, icon: '🎵', contents: ['Yamaha PSS-A50', 'Theory workbook', 'Headphones', 'Stand'], individualPrice: 85000, kitPrice: 72000, brand: 'Yamaha', sold: 5 },
+    { name: 'Keys Kit', slug: 'keys-kit', categoryId: cm.piano, icon: '🎵', contents: ['PSS-A50 keyboard', 'Theory workbook', 'Headphones', 'Stand'], individualPrice: 85000, kitPrice: 72000, sold: 5 },
     { name: 'Coder Kit', slug: 'coder-kit', categoryId: cm.coding, icon: '🚀', contents: ['Workbook', 'USB (Scratch)', 'Mouse', 'Headphones', 'Notebook'], individualPrice: 15000, kitPrice: 12000, sold: 8 },
     { name: 'Ace Kit', slug: 'ace-kit', categoryId: cm.tennis, icon: '🏆', contents: ['Junior racket', 'Balls (x3)', 'Grip tape', 'Bottle', 'Bag'], individualPrice: 20000, kitPrice: 16000, sold: 6 },
   ]);
@@ -190,13 +190,13 @@ async function seed() {
   // ── Products ──
   const products = await Product.insertMany([
     { name: 'Kids Swimsuit', slug: 'kids-swimsuit', price: 6000, categoryId: cm.swimming, brand: 'Nabaiji', sold: 15, order: 1 },
-    { name: 'Swim Cap', slug: 'swim-cap', price: 2500, categoryId: cm.swimming, brand: 'Speedo', sold: 22, order: 2 },
+    { name: 'Swim Cap', slug: 'swim-cap', price: 2500, categoryId: cm.swimming, sold: 22, order: 2 },
     { name: 'Junior Goggles', slug: 'junior-goggles', price: 4000, categoryId: cm.swimming, brand: 'Arena', sold: 19, order: 3 },
     { name: 'Kickboard', slug: 'kickboard', price: 5000, categoryId: cm.swimming, brand: 'Nabaiji', sold: 8, order: 4 },
     { name: 'Football Boots', slug: 'football-boots', price: 8000, categoryId: cm.football, sold: 24, order: 5 },
     { name: 'Shin Guards', slug: 'shin-guards', price: 3500, categoryId: cm.football, sold: 20, order: 6 },
     { name: 'Dobok Uniform', slug: 'dobok-uniform', price: 8000, categoryId: cm.taekwondo, brand: 'Mooto', sold: 11, order: 7 },
-    { name: 'Yamaha PSS-A50', slug: 'yamaha-pss-a50', price: 65000, categoryId: cm.piano, brand: 'Yamaha', sold: 3, order: 8 },
+    { name: 'PSS-A50 Keyboard', slug: 'pss-a50-keyboard', price: 65000, categoryId: cm.piano, sold: 3, order: 8 },
     { name: 'Theory Workbook', slug: 'theory-workbook', price: 3000, categoryId: cm.piano, brand: 'SkillPadi', sold: 7, order: 9 },
     { name: 'Junior Racket 23"', slug: 'junior-racket', price: 8000, categoryId: cm.tennis, brand: 'Wilson', sold: 4, order: 10 },
     { name: 'Coding Workbook', slug: 'coding-workbook', price: 3500, categoryId: cm.coding, brand: 'SkillPadi', sold: 6, order: 11 },
@@ -256,7 +256,7 @@ async function seed() {
       maxPerTeam: 4,
       entryFee: 10000,
       status: 'registration',
-      sponsoredBy: { name: 'Speedo', logo: '' },
+      
       isActive: true,
     },
   ]);

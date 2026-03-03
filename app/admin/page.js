@@ -33,6 +33,7 @@ const TABS = [
   { id: 'communities', label: 'Estates', icon: '🏘️' },
   { id: 'tournaments', label: 'Tournaments', icon: '🏆' },
   { id: 'shop', label: 'Shop', icon: '🛍️' },
+  { id: 'sponsors', label: 'Sponsors', icon: '🤝' },
   { id: 'revenue', label: 'Revenue', icon: '💳' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ];
@@ -138,6 +139,7 @@ export default function AdminPage() {
   const [orders, setOrders] = useState([]);
   const [categories, setCategories] = useState([]);
   const [tournaments, setTournaments] = useState([]);
+  const [sponsors, setSponsors] = useState([]);
   const [schools, setSchools] = useState([]);
   const [schoolTab, setSchoolTab] = useState('pending');
   const [approvingSchool, setApprovingSchool] = useState(null);
@@ -187,7 +189,7 @@ export default function AdminPage() {
     if (!isAdmin) return;
     setLoadingData(true);
     try {
-      const [sRes, eRes, enrRes, cRes, pRes, uRes, payRes, prodRes, kitRes, ordRes, tRes, schRes, comRes] = await Promise.all([
+      const [sRes, eRes, enrRes, cRes, pRes, uRes, payRes, prodRes, kitRes, ordRes, tRes, schRes, comRes, spRes] = await Promise.all([
         authFetch('/api/admin/stats'),
         authFetch('/api/enquiries'),
         authFetch('/api/enrollments'),
@@ -201,6 +203,7 @@ export default function AdminPage() {
         authFetch('/api/tournaments'),
         authFetch('/api/schools'),
         authFetch('/api/communities'),
+        authFetch('/api/sponsors?all=true'),
       ]);
       if (sRes.ok) {
         const sData = await sRes.json();
@@ -219,6 +222,7 @@ export default function AdminPage() {
       if (tRes.ok) setTournaments((await tRes.json()).tournaments || []);
       if (schRes.ok) setSchools((await schRes.json()).schools || []);
       if (comRes.ok) setCommunities((await comRes.json()).communities || []);
+      if (spRes.ok) setSponsors((await spRes.json()).sponsors || []);
     } catch (e) { console.error('Admin load error:', e); }
     setLoadingData(false);
   }, [isAdmin, authFetch]);
@@ -1207,6 +1211,7 @@ export default function AdminPage() {
       description: form.description || undefined,
       categoryId: form.categoryId || undefined,
       isActive: form.isActive !== false,
+      sponsorId: form.sponsorId || undefined,
     };
     const res = await authFetch('/api/tournaments', { method: 'POST', body: JSON.stringify(body) });
     setSubmitting(false);
@@ -1236,6 +1241,7 @@ export default function AdminPage() {
       description: form.description || undefined,
       categoryId: form.categoryId || undefined,
       isActive: form.isActive !== false,
+      sponsorId: form.sponsorId || undefined,
     };
     const res = await authFetch(`/api/tournaments/${modalId}`, { method: 'PUT', body: JSON.stringify(body) });
     setSubmitting(false);
@@ -1247,6 +1253,75 @@ export default function AdminPage() {
     } else {
       const e = await res.json().catch(() => ({}));
       toast.error(e.error || 'Update failed');
+    }
+  };
+
+  // ── Create Sponsor ──
+  const submitCreateSponsor = async () => {
+    if (!form.name?.trim()) { toast.error('Sponsor name is required'); return; }
+    setSubmitting(true);
+    const body = {
+      name: form.name.trim(),
+      tagline: form.tagline?.trim() || undefined,
+      logo: form.logo?.trim() || undefined,
+      website: form.website?.trim() || undefined,
+      contactName: form.contactName?.trim() || undefined,
+      contactEmail: form.contactEmail?.trim() || undefined,
+      contactPhone: form.contactPhone?.trim() || undefined,
+      type: form.type || 'general',
+      active: form.active !== false,
+      notes: form.notes?.trim() || undefined,
+    };
+    const res = await authFetch('/api/sponsors', { method: 'POST', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      const data = await res.json();
+      setSponsors(prev => [...prev, data.sponsor]);
+      toast.success('Sponsor created');
+      closeModal();
+    } else {
+      const e = await res.json().catch(() => ({}));
+      toast.error(e.error || 'Create failed');
+    }
+  };
+
+  // ── Edit Sponsor ──
+  const submitEditSponsor = async () => {
+    setSubmitting(true);
+    const body = {
+      name: form.name?.trim(),
+      tagline: form.tagline?.trim() || null,
+      logo: form.logo?.trim() || null,
+      website: form.website?.trim() || null,
+      contactName: form.contactName?.trim() || null,
+      contactEmail: form.contactEmail?.trim() || null,
+      contactPhone: form.contactPhone?.trim() || null,
+      type: form.type,
+      active: form.active !== false,
+      notes: form.notes?.trim() || null,
+    };
+    const res = await authFetch(`/api/sponsors/${modalId}`, { method: 'PUT', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      const data = await res.json();
+      setSponsors(prev => prev.map(s => s._id === modalId ? data.sponsor : s));
+      toast.success('Sponsor updated');
+      closeModal();
+    } else {
+      const e = await res.json().catch(() => ({}));
+      toast.error(e.error || 'Update failed');
+    }
+  };
+
+  // ── Delete Sponsor ──
+  const deleteSponsor = async (id) => {
+    if (!confirm('Delete this sponsor? This cannot be undone.')) return;
+    const res = await authFetch(`/api/sponsors/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setSponsors(prev => prev.filter(s => s._id !== id));
+      toast.success('Sponsor deleted');
+    } else {
+      toast.error('Delete failed');
     }
   };
 
@@ -1568,6 +1643,59 @@ export default function AdminPage() {
     </Overlay>
   );
 
+  const SponsorModal = () => {
+    const isEdit = modal === 'editSponsor';
+    const TYPE_OPTS = ['general', 'category', 'tournament', 'product', 'platform'];
+    return (
+      <Overlay>
+        <ModalHeader title={isEdit ? 'Edit Sponsor' : 'New Sponsor'} />
+        <ModalBody>
+          <Row>
+            <FL label="Name" req>
+              <input {...inp('name')} placeholder="e.g. Speedo Nigeria" />
+            </FL>
+            <FL label="Type">
+              <select className="input-field text-xs w-full" value={fVal('type') || 'general'} onChange={setF('type')}>
+                {TYPE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </FL>
+          </Row>
+          <FL label="Tagline">
+            <input {...inp('tagline')} placeholder="e.g. Presented by Speedo" />
+          </FL>
+          <Row>
+            <FL label="Logo URL">
+              <input {...inp('logo')} placeholder="https://..." />
+            </FL>
+            <FL label="Website">
+              <input {...inp('website')} placeholder="https://..." />
+            </FL>
+          </Row>
+          <SectionHead title="Contact" />
+          <Row>
+            <FL label="Contact Name">
+              <input {...inp('contactName')} placeholder="e.g. Chidi Obi" />
+            </FL>
+            <FL label="Contact Email">
+              <input {...inp('contactEmail')} placeholder="chidi@speedo.com" />
+            </FL>
+          </Row>
+          <FL label="Contact Phone">
+            <input {...inp('contactPhone')} placeholder="0812..." />
+          </FL>
+          <FL label="Internal Notes">
+            <textarea {...inp('notes')} className="input-field text-xs w-full resize-none" rows={2} placeholder="Deal terms, renewal date..." />
+          </FL>
+          <CheckField field="active" label="Active (visible on platform)" />
+        </ModalBody>
+        <ModalFooter
+          onSubmit={isEdit ? submitEditSponsor : submitCreateSponsor}
+          submitLabel={isEdit ? 'Save Changes' : 'Create Sponsor'}
+        />
+      </Overlay>
+    );
+  };
+
   const TournamentModal = () => {
     const isEdit = modal === 'editTournament';
     const STATUS_OPTS = ['upcoming', 'registration', 'in-progress', 'completed', 'cancelled'];
@@ -1624,6 +1752,12 @@ export default function AdminPage() {
             <textarea {...inp('description')} className="input-field text-xs w-full resize-none" rows={3}
               placeholder="Brief description visible to parents..." />
           </FL>
+          <FL label="Sponsor">
+            <select className="input-field text-xs w-full" value={fVal('sponsorId') || ''} onChange={setF('sponsorId')}>
+              <option value="">— none —</option>
+              {sponsors.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
+            </select>
+          </FL>
           <CheckField field="isActive" label="Active (visible on site)" />
         </ModalBody>
         <ModalFooter
@@ -1667,6 +1801,7 @@ export default function AdminPage() {
         {(modal === 'createProgram' || modal === 'editProgram') && ProgramModal()}
         {(modal === 'createProduct' || modal === 'editProduct') && ProductModal()}
         {(modal === 'createKit' || modal === 'editKit') && KitModal()}
+        {(modal === 'createSponsor' || modal === 'editSponsor') && SponsorModal()}
         {(modal === 'createTournament' || modal === 'editTournament') && TournamentModal()}
         {modal === 'tournamentResults' && TournamentResultsModal()}
       </ModalCtx.Provider>
@@ -2753,6 +2888,43 @@ export default function AdminPage() {
             </div>
           )}
 
+          {/* ════════ SPONSORS ════════ */}
+          {tab === 'sponsors' && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-serif text-lg">Brand Sponsors & Partners</h2>
+                <button onClick={() => openModal('createSponsor', { active: true, type: 'general' })} className="btn-primary text-xs px-3 py-2">+ New Sponsor</button>
+              </div>
+              {sponsors.length === 0 ? (
+                <div className="text-center py-16 text-slate-400 text-sm">No sponsors yet. Add your first brand partner.</div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {sponsors.map(sp => (
+                    <div key={sp._id} className="bg-white rounded-xl border border-slate-200/80 p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <div className="font-bold text-sm">{sp.name}</div>
+                          {sp.tagline && <div className="text-[10px] text-slate-400 mt-0.5">{sp.tagline}</div>}
+                        </div>
+                        <span className={`badge text-[9px] ${sp.active ? 'badge-green' : 'badge-amber'}`}>{sp.active ? 'Active' : 'Inactive'}</span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 space-y-0.5 mb-3">
+                        <div className="capitalize">Type: {sp.type}</div>
+                        {sp.contactName && <div>Contact: {sp.contactName}</div>}
+                        {sp.contactEmail && <div>{sp.contactEmail}</div>}
+                        {sp.website && <a href={sp.website} target="_blank" rel="noopener noreferrer" className="text-teal-600 hover:underline block">{sp.website}</a>}
+                      </div>
+                      <div className="flex gap-2 pt-2 border-t border-slate-100">
+                        <button onClick={() => openModal('editSponsor', { ...sp, sponsorId: sp._id }, sp._id)} className="btn-outline text-[10px] px-2 py-1">Edit</button>
+                        <button onClick={() => deleteSponsor(sp._id)} className="text-[10px] text-red-500 hover:text-red-700 px-2 py-1 rounded border border-red-200 hover:border-red-400 transition-colors">Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ════════ REVENUE ════════ */}
           {tab === 'revenue' && (
             <div className="animate-fade-in">
@@ -2841,7 +3013,7 @@ export default function AdminPage() {
                     {stats?.categories?.map(c => (
                       <div key={c._id} className="flex justify-between py-1.5 border-b border-slate-50 last:border-0">
                         <span>{c.icon} {c.name}</span>
-                        <span className="text-slate-400">{c.sponsor?.name || 'No sponsor'} · {c.programCount || 0} programs</span>
+                        <span className="text-slate-400">{c.sponsorId?.name || 'No sponsor'} · {c.programCount || 0} programs</span>
                       </div>
                     ))}
                   </div>

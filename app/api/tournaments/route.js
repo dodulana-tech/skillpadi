@@ -16,6 +16,7 @@ export const GET = handler(async (request) => {
 
   const tournaments = await Tournament.find(filter)
     .populate('categoryId', 'name slug icon color')
+    .populate('sponsorId', 'name tagline logo website')
     .sort({ date: 1 })
     .lean();
 

@@ -16,6 +16,7 @@ export const GET = handler(async (request, { params }) => {
 
   const tournament = await Tournament.findOne(query)
     .populate('categoryId', 'name slug icon color')
+    .populate('sponsorId', 'name tagline logo website')
     .lean();
 
   if (!tournament) return error('Tournament not found', 404);

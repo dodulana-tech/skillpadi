@@ -42,7 +42,7 @@ export const GET = handler(async (request) => {
     Enquiry.countDocuments(),
     Enquiry.countDocuments({ status: 'enrolled' }),
     School.countDocuments({ isActive: true }),
-    Category.find({ active: true }).lean(),
+    Category.find({ active: true }).populate('sponsorId', 'name').lean(),
     Program.find({ isActive: true }).select('spotsTotal spotsTaken categoryId pricePerSession sessions').lean(),
   ]);
 

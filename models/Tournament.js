@@ -49,7 +49,7 @@ const TournamentSchema = new mongoose.Schema({
     enum: ['upcoming', 'registration', 'in-progress', 'completed', 'cancelled'],
     default: 'upcoming',
   },
-  sponsoredBy: { name: String, logo: String },
+  sponsorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Sponsor', default: null },
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 

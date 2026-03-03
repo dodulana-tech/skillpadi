@@ -8,11 +8,7 @@ const CategorySchema = new mongoose.Schema({
   description: String,
   active: { type: Boolean, default: true },
   order: { type: Number, default: 0 },
-  sponsor: {
-    name: String,     // "Speedo"
-    tagline: String,  // "Presented by Speedo"
-    logo: String,     // URL
-  },
+  sponsorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Sponsor', default: null },
 }, { timestamps: true });
 
 export default mongoose.models.Category || mongoose.model('Category', CategorySchema);

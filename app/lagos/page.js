@@ -120,7 +120,7 @@ export default function LagosPage() {
         <div className="card p-4 mb-6">
           <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-2">Launch Areas</div>
           <div className="flex flex-wrap gap-2">
-            {['Lekki', 'Ikoyi', 'Victoria Island', 'Ajah', 'Sangotedo'].map(area => (
+            {['Lekki', 'Ikoyi', 'Victoria Island', 'Ajah', 'Ikeja'].map(area => (
               <span key={area} className="px-3 py-1 rounded-full bg-teal-50 text-teal-700 text-[10px] font-semibold border border-teal-200/60">
                 📍 {area}
               </span>
@@ -183,7 +183,7 @@ export default function LagosPage() {
                   value={form.area}
                   onChange={e => setForm(p => ({ ...p, area: e.target.value }))}>
                   <option value="">— select area —</option>
-                  {['Lekki', 'Ikoyi', 'Victoria Island', 'Ajah', 'Sangotedo', 'Other Lagos'].map(a => (
+                  {['Lekki', 'Ikoyi', 'Victoria Island', 'Ajah', 'Ikeja', 'Other Lagos'].map(a => (
                     <option key={a} value={a}>{a}</option>
                   ))}
                 </select>
