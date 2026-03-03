@@ -6,8 +6,6 @@ import Payment from '@/models/Payment';
 import Program from '@/models/Program';
 import Enrollment from '@/models/Enrollment';
 import User from '@/models/User';
-import School from '@/models/School';
-import Community from '@/models/Community';
 import { verifyPayment } from '@/lib/paystack';
 
 export const GET = handler(async (request) => {
@@ -36,6 +34,7 @@ export const GET = handler(async (request) => {
     return success({ status: verification.status });
   }
 
+  // Update payment — MERGE, don't overwrite webhookData
   await Payment.updateOne({ _id: payment._id }, {
     status: 'success',
     paystackRef: String(verification.id || ''),
@@ -43,7 +42,12 @@ export const GET = handler(async (request) => {
     paidAt: verification.paid_at ? new Date(verification.paid_at) : new Date(),
   });
 
+  // Use the ORIGINAL payment's webhookData (checkout items are here)
   const checkout = payment.webhookData?.checkoutItems;
+  const childName = payment.webhookData?.childName;
+  const childAge = payment.webhookData?.childAge;
+  const programId = payment.webhookData?.programId;
+
   if (Array.isArray(checkout)) {
     for (const item of checkout) {
       if (item.type === 'membership') {
@@ -53,18 +57,25 @@ export const GET = handler(async (request) => {
           membershipRef: ref,
         });
       }
-      if (item.type === 'enrollment' && payment.webhookData?.programId) {
-        const existingEnr = await Enrollment.find({ userId: payment.userId, programId: payment.webhookData.programId, status: 'active' }).lean();
-        if (existingEnr.length === 0) {
+      if (item.type === 'enrollment' && programId) {
+        // Check duplicate — include childName so siblings in same program work
+        const exists = await Enrollment.findOne({
+          userId: payment.userId,
+          programId: programId,
+          childName: childName,
+          status: { $in: ['pending', 'active'] },
+        }).lean();
+
+        if (!exists) {
           await Program.updateOne(
-            { _id: payment.webhookData.programId, spotsTaken: { $lt: 100 } },
+            { _id: programId, $expr: { $lt: ['$spotsTaken', '$spotsTotal'] } },
             { $inc: { spotsTaken: 1 } },
           );
           await Enrollment.create({
             userId: payment.userId,
-            childName: payment.webhookData.childName || 'Child',
-            childAge: payment.webhookData.childAge,
-            programId: payment.webhookData.programId,
+            childName: childName || 'Child',
+            childAge: childAge,
+            programId: programId,
             status: 'active',
             paymentId: payment._id,
             startDate: new Date(),
@@ -74,26 +85,13 @@ export const GET = handler(async (request) => {
     }
   }
 
+  // Handle simple membership (non-checkout)
   if (payment.type === 'membership' && !checkout) {
     await User.updateOne({ _id: payment.userId }, {
       membershipPaid: true,
       membershipDate: new Date(),
       membershipRef: ref,
     });
-  }
-
-  // ── Credit partner markup earnings ──────────────────────────────
-  if (payment.schoolId && typeof payment.schoolMarkup === 'number' && payment.schoolMarkup > 0) {
-    await School.updateOne(
-      { _id: payment.schoolId },
-      { $inc: { pendingPayout: payment.schoolMarkup, totalEarnings: payment.schoolMarkup } },
-    );
-  }
-  if (payment.communityId && typeof payment.communityMarkup === 'number' && payment.communityMarkup > 0) {
-    await Community.updateOne(
-      { _id: payment.communityId },
-      { $inc: { pendingPayout: payment.communityMarkup, totalEarnings: payment.communityMarkup } },
-    );
   }
 
   return success({ status: 'success' });
