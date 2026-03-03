@@ -1,6 +1,6 @@
 'use client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import EnrollmentCheckout from '@/components/EnrollmentCheckout';
@@ -35,12 +35,93 @@ function CoachAvatar({ initials, color, size = 40 }) {
   );
 }
 
+function LeaderboardTeaser() {
+  const [kids, setKids] = useState([]);
+  const [topSchool, setTopSchool] = useState(null);
+  const [topArea, setTopArea] = useState(null);
+
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/leaderboards?type=kids&limit=3').then(r => r.ok ? r.json() : {}),
+      fetch('/api/leaderboards?type=schools&limit=1').then(r => r.ok ? r.json() : {}),
+      fetch('/api/leaderboards?type=areas&limit=1').then(r => r.ok ? r.json() : {}),
+    ]).then(([k, s, a]) => {
+      setKids(k.leaderboard || []);
+      setTopSchool((s.leaderboard || [])[0] || null);
+      setTopArea((a.leaderboard || [])[0] || null);
+    });
+  }, []);
+
+  if (kids.length === 0 && !topSchool && !topArea) return null;
+
+  return (
+    <section className="py-12 px-5 bg-gradient-to-b from-teal-50/50 to-cream">
+      <div className="max-w-3xl mx-auto">
+        <div className="flex items-end justify-between mb-5">
+          <div>
+            <div className="text-[9px] uppercase font-bold text-teal-600 tracking-wider mb-1">Live Rankings</div>
+            <h2 className="font-serif text-xl">🏆 Leaderboard</h2>
+          </div>
+          <Link href="/leaderboard" className="text-teal-primary text-xs font-semibold hover:underline">
+            View Full →
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Top 3 kids */}
+          {kids.length > 0 && (
+            <div className="card p-4 sm:col-span-2">
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-3">Top Kids This Term</div>
+              <div className="space-y-2.5">
+                {kids.map((k, i) => (
+                  <div key={k._id || i} className="flex items-center gap-3">
+                    <span className="text-lg w-6 text-center shrink-0">{['🥇','🥈','🥉'][i]}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-semibold truncate">{k.displayName}</div>
+                      {k.userArea && <div className="text-[9px] text-slate-400">📍 {k.userArea}</div>}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-xs font-bold text-teal-700">{k.stats?.totalSessions || 0} sessions</div>
+                      <div className="text-[9px] text-orange-500">{k.stats?.currentStreak || 0}🔥</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Top school + area */}
+          <div className="space-y-3">
+            {topSchool && (
+              <div className="card p-4">
+                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">🏫 Top School</div>
+                <div className="font-semibold text-sm">{topSchool.schoolName}</div>
+                {topSchool.area && <div className="text-[9px] text-slate-400">📍 {topSchool.area}</div>}
+                <div className="text-xs text-teal-700 font-bold mt-1">{topSchool.totalEnrolled} kids enrolled</div>
+              </div>
+            )}
+            {topArea && (
+              <div className="card p-4">
+                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">📍 Most Active Area</div>
+                <div className="font-semibold text-sm">{topArea.area}</div>
+                <div className="text-xs text-teal-700 font-bold mt-1">{topArea.totalSessions} sessions completed</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function LandingClient({ categories, coaches, programs }) {
   const { isAuthenticated, dbUser } = useAuth();
   const [enrollProg, setEnrollProg] = useState(null);
   const [enqProg, setEnqProg] = useState(null);
   const [form, setForm] = useState({ parentName: '', phone: '', childName: '', childAge: '', message: '' });
   const [submitting, setSubmitting] = useState(false);
+  const [cityFilter, setCityFilter] = useState('abuja');
+
+  const hasLagosPrograms = programs.some(p => p.city === 'lagos');
+  const filteredPrograms = programs.filter(p => !p.city || p.city === cityFilter);
 
   const submitEnquiry = async (e) => {
     e.preventDefault();
@@ -123,9 +204,30 @@ export function LandingClient({ categories, coaches, programs }) {
       {/* Programs */}
       <section id="programs" className="py-8 px-5">
         <div className="page-container">
-          <h2 className="font-serif text-[clamp(1.4rem,3vw,1.8rem)] text-center mb-6">Programs</h2>
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+            <h2 className="font-serif text-[clamp(1.4rem,3vw,1.8rem)]">Programs</h2>
+            {hasLagosPrograms && (
+              <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
+                {[{ id: 'abuja', label: '🏙️ Abuja' }, { id: 'lagos', label: '🌊 Lagos' }].map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => setCityFilter(c.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${cityFilter === c.id ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {cityFilter === 'lagos' && filteredPrograms.length === 0 && (
+            <div className="text-center py-10">
+              <div className="text-3xl mb-3">🌊</div>
+              <p className="text-slate-500 text-sm mb-4">Lagos programs launching soon!</p>
+              <Link href="/lagos" className="btn-primary btn-sm">Join Lagos Waitlist →</Link>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {programs.map((prog) => {
+            {filteredPrograms.map((prog) => {
               const cat = prog.categoryId;
               const coach = prog.coachId;
               const total = prog.pricePerSession * prog.sessions;
@@ -150,14 +252,21 @@ export function LandingClient({ categories, coaches, programs }) {
                       <div>👤 <Link href={`/coaches/${coach?.slug}`} className="font-semibold hover:underline" style={{ color: cat?.color }}>{coach?.name}</Link>{' '}<ShieldBadge level={coach?.shieldLevel} /></div>
                       <div>📅 {prog.schedule} · {prog.duration}min · {prog.groupSize}</div>
                     </div>
-                    <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-amber-50 text-[9px] text-amber-800">{sup?.icon} {sup?.label}</div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {prog.gender && prog.gender !== 'any' && (
+                        <span className="px-2 py-0.5 rounded-full text-[8px] font-semibold bg-pink-100 text-pink-700">
+                          {prog.gender === 'female' ? '👧 Girls Only' : '👦 Boys Only'}
+                        </span>
+                      )}
+                      <div className="flex items-center gap-1 px-2 py-1 rounded bg-amber-50 text-[9px] text-amber-800">{sup?.icon} {sup?.label}</div>
+                    </div>
                     <div className="flex items-end justify-between pt-1">
                       <div>
                         <div className="font-serif text-lg">{fmt(total)}</div>
                         <div className="text-[8px] text-slate-400">+ {fmt(tax)} VAT · {prog.sessions} sessions</div>
                       </div>
                       <div className="flex gap-1">
-                        <a href={waLink(coach?.whatsapp || WA_BIZ, `Question about "${prog.name}".`)} target="_blank" rel="noopener noreferrer" className="btn-sm bg-[#25D366] text-white rounded-lg text-[10px] font-semibold px-2 py-1 inline-flex items-center">💬</a>
+                        <a href={waLink(WA_BIZ, `Question about "${prog.name}".`)} target="_blank" rel="noopener noreferrer" className="btn-sm bg-[#25D366] text-white rounded-lg text-[10px] font-semibold px-2 py-1 inline-flex items-center">💬</a>
                         <button onClick={() => setEnrollProg(prog)} className="btn-primary btn-sm">Enroll Now</button>
                       </div>
                     </div>
@@ -246,6 +355,9 @@ export function LandingClient({ categories, coaches, programs }) {
           ))}
         </div>
       </section>
+
+      {/* ── Leaderboard Teaser ── */}
+      <LeaderboardTeaser />
 
       {/* Footer */}
       <footer className="py-4 px-5 border-t border-slate-200/60 text-center">

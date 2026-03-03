@@ -41,6 +41,9 @@ const ProgramSchema = new mongoose.Schema({
 
   starterKitId: { type: mongoose.Schema.Types.ObjectId, ref: 'StarterKit' },
 
+  gender: { type: String, enum: ['any', 'male', 'female'], default: 'any' },
+  city: { type: String, enum: ['abuja', 'lagos'], default: 'abuja' },
+
   isActive: { type: Boolean, default: true },
   termStart: Date,
   termEnd: Date,

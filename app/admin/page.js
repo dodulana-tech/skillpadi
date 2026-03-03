@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 
+// ── Helpers ──────────────────────────────────────────────────────────
 const fmt = (n) => `₦${Number(n).toLocaleString()}`;
 const pct = (a, b) => b > 0 ? Math.round((a / b) * 100) : 0;
 const ago = (d) => {
@@ -15,7 +16,12 @@ const ago = (d) => {
   if (ms < 86400000) return `${Math.round(ms / 3600000)}h ago`;
   return `${Math.round(ms / 86400000)}d ago`;
 };
+const toSlug = (s) => s.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+const autoInitials = (n) => n.split(' ').filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 4) || 'SP';
+const arrFromText = (s) => (s || '').split('\n').map(x => x.trim()).filter(Boolean);
+const dateStr = (d) => d ? new Date(d).toISOString().split('T')[0] : '';
 
+// ── Constants ────────────────────────────────────────────────────────
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: '📊' },
   { id: 'enquiries', label: 'Enquiries', icon: '📩' },
@@ -23,14 +29,44 @@ const TABS = [
   { id: 'members', label: 'Members', icon: '👨‍👩‍👧' },
   { id: 'coaches', label: 'Coaches', icon: '🏅' },
   { id: 'programs', label: 'Programs', icon: '📋' },
+  { id: 'tournaments', label: 'Tournaments', icon: '🏆' },
   { id: 'shop', label: 'Shop', icon: '🛍️' },
   { id: 'revenue', label: 'Revenue', icon: '💳' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ];
 
+const SUPERVISION_OPTS = ['parent-present', 'drop-off', 'school-chaperone', 'nanny-driver'];
+
+const VETTING_ITEMS = [
+  { key: 'nin', label: 'NIN Verification', tier: 1 },
+  { key: 'police', label: 'Police Check', tier: 1 },
+  { key: 'address', label: 'Address Verified', tier: 1 },
+  { key: 'photoMatch', label: 'Photo Match', tier: 1 },
+  { key: 'coachingCert', label: 'Coaching Certificate', tier: 2 },
+  { key: 'experience', label: 'Experience Verified', tier: 2 },
+  { key: 'references', label: 'References Checked', tier: 2 },
+  { key: 'firstAid', label: 'First Aid Certified', tier: 3 },
+  { key: 'safeguarding', label: 'Safeguarding Training', tier: 3 },
+  { key: 'sportSafety', label: 'Sport Safety Certified', tier: 3 },
+  { key: 'reverification', label: 'Re-verification', tier: 4 },
+  { key: 'insurance', label: 'Insurance Active', tier: 4 },
+  { key: 'rating', label: 'Rating Maintained', tier: 4 },
+  { key: 'incidents', label: 'No Incident History', tier: 4 },
+];
+
+const TIER_COLORS = {
+  1: { pill: 'bg-blue-50 text-blue-700', label: 'Identity & Background' },
+  2: { pill: 'bg-purple-50 text-purple-700', label: 'Professional Credentials' },
+  3: { pill: 'bg-orange-50 text-orange-700', label: 'Child Safety' },
+  4: { pill: 'bg-teal-50 text-teal-700', label: 'Ongoing Trust' },
+};
+
+// ═══════════════════════════════════════════════════════════════════
 export default function AdminPage() {
   const { isAuthenticated, isAdmin, loading, authFetch, dbUser } = useAuth();
   const router = useRouter();
+
+  // ── Core data ──
   const [tab, setTab] = useState('dashboard');
   const [stats, setStats] = useState(null);
   const [enquiries, setEnquiries] = useState([]);
@@ -42,21 +78,42 @@ export default function AdminPage() {
   const [products, setProducts] = useState([]);
   const [kits, setKits] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [tournaments, setTournaments] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
+
+  // ── UI ──
   const [enqFilter, setEnqFilter] = useState('all');
   const [sideOpen, setSideOpen] = useState(false);
+  const [coachSearch, setCoachSearch] = useState('');
+  const [programSearch, setProgramSearch] = useState('');
+  const [coachCityFilter, setCoachCityFilter] = useState('all');
+  const [programCityFilter, setProgramCityFilter] = useState('all');
 
+  // ── Modal ──
+  const [modal, setModal] = useState(null);
+  const [modalId, setModalId] = useState(null);
+  const [form, setForm] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+
+  // ── Award modal ──
+  const [awardModal, setAwardModal] = useState(null); // { enr, achievements }
+  const [awardAchId, setAwardAchId] = useState('');
+  const [awarding, setAwarding] = useState(false);
+
+  // ── Auth guard ──
   useEffect(() => {
     if (!loading && (!isAuthenticated || !isAdmin)) {
       router.push(isAuthenticated ? '/dashboard/parent' : '/auth/login');
     }
   }, [loading, isAuthenticated, isAdmin, router]);
 
+  // ── Data loading ──
   const loadData = useCallback(async () => {
     if (!isAdmin) return;
     setLoadingData(true);
     try {
-      const [sRes, eRes, enrRes, cRes, pRes, uRes, payRes, prodRes, kitRes, ordRes] = await Promise.all([
+      const [sRes, eRes, enrRes, cRes, pRes, uRes, payRes, prodRes, kitRes, ordRes, tRes] = await Promise.all([
         authFetch('/api/admin/stats'),
         authFetch('/api/enquiries'),
         authFetch('/api/enrollments'),
@@ -67,8 +124,13 @@ export default function AdminPage() {
         authFetch('/api/shop/products'),
         authFetch('/api/shop/kits'),
         authFetch('/api/shop/orders'),
+        authFetch('/api/tournaments'),
       ]);
-      if (sRes.ok) setStats(await sRes.json());
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        setStats(sData);
+        setCategories(sData.categories || []);
+      }
       if (eRes.ok) setEnquiries((await eRes.json()).enquiries || []);
       if (enrRes.ok) setEnrollments((await enrRes.json()).enrollments || []);
       if (cRes.ok) setCoaches((await cRes.json()).coaches || []);
@@ -78,87 +140,389 @@ export default function AdminPage() {
       if (prodRes.ok) setProducts((await prodRes.json()).products || []);
       if (kitRes.ok) setKits((await kitRes.json()).kits || []);
       if (ordRes.ok) setOrders((await ordRes.json()).orders || []);
+      if (tRes.ok) setTournaments((await tRes.json()).tournaments || []);
     } catch (e) { console.error('Admin load error:', e); }
     setLoadingData(false);
   }, [isAdmin, authFetch]);
 
   useEffect(() => { if (isAdmin) loadData(); }, [isAdmin, loadData]);
 
+  const refreshCoaches = async () => {
+    const res = await authFetch('/api/coaches?active=false');
+    if (res.ok) setCoaches((await res.json()).coaches || []);
+  };
+  const refreshPrograms = async () => {
+    const res = await authFetch('/api/programs?active=false');
+    if (res.ok) setPrograms((await res.json()).programs || []);
+  };
+  const refreshProducts = async () => {
+    const res = await authFetch('/api/shop/products');
+    if (res.ok) setProducts((await res.json()).products || []);
+  };
+  const refreshKits = async () => {
+    const res = await authFetch('/api/shop/kits');
+    if (res.ok) setKits((await res.json()).kits || []);
+  };
+
+  // ── Modal helpers ──
+  const openModal = (type, data = {}, id = null) => {
+    setModal(type);
+    setModalId(id);
+    setForm(data);
+    setSubmitting(false);
+  };
+  const closeModal = () => { setModal(null); setModalId(null); setForm({}); setSubmitting(false); };
+  const setF = (field) => (e) => setForm(prev => ({
+    ...prev,
+    [field]: e.target.type === 'checkbox' ? e.target.checked : e.target.value,
+  }));
+  const setFv = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+
+  // ── Open helpers for edit / vetting ──
+  const openCreateCoach = () => openModal('createCoach', { isActive: true });
+  const openEditCoach = (c) => openModal('editCoach', {
+    name: c.name, slug: c.slug, initials: c.initials,
+    categoryId: c.categoryId?._id || c.categoryId,
+    title: c.title || '', bio: c.bio || '',
+    whatsapp: c.whatsapp || '', email: c.email || '',
+    yearsExperience: c.yearsExperience ?? '', ageGroups: c.ageGroups || '',
+    languages: (c.languages || []).join('\n'), venues: (c.venues || []).join('\n'),
+    featuredOrder: c.featuredOrder ?? 0, isActive: c.isActive !== false,
+    _slugManual: true, _initialsManual: true,
+  }, c._id);
+
+  const openVetting = (c) => {
+    const init = {};
+    VETTING_ITEMS.forEach(({ key }) => {
+      init[`v_${key}_status`] = c.vetting?.[key]?.status || 'pending';
+      init[`v_${key}_note`] = c.vetting?.[key]?.note || '';
+    });
+    openModal('vetting', init, c._id);
+  };
+
+  const openCreateProgram = () => openModal('createProgram', { isActive: true, supervision: 'parent-present' });
+  const openEditProgram = (p) => openModal('editProgram', {
+    name: p.name, slug: p.slug,
+    categoryId: p.categoryId?._id || p.categoryId,
+    coachId: p.coachId?._id || p.coachId,
+    pricePerSession: p.pricePerSession, spotsTotal: p.spotsTotal,
+    supervision: p.supervision, ageRange: p.ageRange || '',
+    ageMin: p.ageMin ?? '', ageMax: p.ageMax ?? '',
+    schedule: p.schedule || '', duration: p.duration ?? '',
+    sessions: p.sessions ?? '', location: p.location || '',
+    locationNote: p.locationNote || '',
+    termStart: dateStr(p.termStart), termEnd: dateStr(p.termEnd),
+    milestones: (p.milestones || []).join('\n'),
+    highlights: (p.highlights || []).join('\n'),
+    whatToBring: (p.whatToBring || []).join('\n'),
+    safetyNote: p.safetyNote || '', gender: p.gender || 'any',
+    isActive: p.isActive !== false, _slugManual: true,
+  }, p._id);
+
+  const openCreateProduct = () => openModal('createProduct', { inStock: true });
+  const openCreateKit = () => openModal('createKit', { inStock: true });
+
+  // ── Existing actions ──
   const updateEnquiry = async (id, status) => {
     const res = await authFetch(`/api/enquiries/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
     if (res.ok) {
-      setEnquiries((prev) => prev.map((e) => e._id === id ? { ...e, status } : e));
+      setEnquiries(prev => prev.map(e => e._id === id ? { ...e, status } : e));
       toast.success(`Enquiry marked as ${status}`);
     }
   };
-
   const deleteEnquiry = async (id) => {
     if (!confirm('Delete this enquiry permanently?')) return;
     const res = await authFetch(`/api/enquiries/${id}`, { method: 'DELETE' });
-    if (res.ok) { setEnquiries((prev) => prev.filter((e) => e._id !== id)); toast.success('Enquiry deleted'); }
+    if (res.ok) { setEnquiries(prev => prev.filter(e => e._id !== id)); toast.success('Enquiry deleted'); }
   };
-
   const updateEnrollment = async (id, update) => {
     const res = await authFetch(`/api/enrollments/${id}`, { method: 'PATCH', body: JSON.stringify(update) });
     if (res.ok) {
       const data = await res.json();
-      setEnrollments((prev) => prev.map((e) => e._id === id ? { ...e, ...data.enrollment } : e));
+      setEnrollments(prev => prev.map(e => e._id === id ? { ...e, ...data.enrollment } : e));
       toast.success('Enrollment updated');
     }
   };
 
+  const openAwardModal = async (enr) => {
+    const categoryId = enr.programId?.categoryId?._id || enr.programId?.categoryId;
+    const url = categoryId ? `/api/achievements?categoryId=${categoryId}` : '/api/achievements';
+    const res = await authFetch(url);
+    const data = res.ok ? await res.json() : {};
+    setAwardModal({ enr, achievements: data.achievements || [] });
+    setAwardAchId('');
+  };
+
+  const submitAward = async () => {
+    if (!awardAchId || !awardModal) return;
+    setAwarding(true);
+    const { enr } = awardModal;
+    const res = await authFetch(`/api/passport/${encodeURIComponent(enr.childName)}/award`, {
+      method: 'POST',
+      body: JSON.stringify({ achievementId: awardAchId, userId: enr.userId?._id || enr.userId, programId: enr.programId?._id || enr.programId }),
+    });
+    setAwarding(false);
+    if (res.ok) {
+      toast.success('Achievement awarded!');
+      setAwardModal(null);
+      setAwardAchId('');
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to award achievement');
+    }
+  };
   const toggleCoachActive = async (id, current) => {
     const res = await authFetch(`/api/coaches/${id}`, { method: 'PUT', body: JSON.stringify({ isActive: !current }) });
     if (res.ok) {
-      setCoaches((prev) => prev.map((c) => c._id === id ? { ...c, isActive: !current } : c));
+      setCoaches(prev => prev.map(c => c._id === id ? { ...c, isActive: !current } : c));
       toast.success(`Coach ${!current ? 'activated' : 'deactivated'}`);
     }
   };
-
   const toggleProgramActive = async (id, current) => {
     const res = await authFetch(`/api/programs/${id}`, { method: 'PUT', body: JSON.stringify({ isActive: !current }) });
     if (res.ok) {
-      setPrograms((prev) => prev.map((p) => p._id === id ? { ...p, isActive: !current } : p));
+      setPrograms(prev => prev.map(p => p._id === id ? { ...p, isActive: !current } : p));
       toast.success(`Program ${!current ? 'activated' : 'deactivated'}`);
     }
   };
-
-  const updateProgramSpots = async (id, spotsTotal) => {
-    const newTotal = prompt('New total spots:', spotsTotal);
-    if (!newTotal || isNaN(newTotal)) return;
-    const res = await authFetch(`/api/programs/${id}`, { method: 'PUT', body: JSON.stringify({ spotsTotal: Number(newTotal) }) });
-    if (res.ok) {
-      setPrograms((prev) => prev.map((p) => p._id === id ? { ...p, spotsTotal: Number(newTotal) } : p));
-      toast.success('Spots updated');
-    }
-  };
-
-  const updateProgramPrice = async (id, current) => {
-    const newPrice = prompt('New price per session (₦):', current);
-    if (!newPrice || isNaN(newPrice)) return;
-    const res = await authFetch(`/api/programs/${id}`, { method: 'PUT', body: JSON.stringify({ pricePerSession: Number(newPrice) }) });
-    if (res.ok) {
-      setPrograms((prev) => prev.map((p) => p._id === id ? { ...p, pricePerSession: Number(newPrice) } : p));
-      toast.success('Price updated');
-    }
-  };
-
   const changeUserRole = async (id, currentRole) => {
     const newRole = prompt('New role (parent, coach, school, community, admin):', currentRole);
-    if (!newRole || !['parent', 'coach', 'school', 'community', 'admin'].includes(newRole)) { if (newRole) toast.error('Invalid role'); return; }
+    if (!newRole || !['parent', 'coach', 'school', 'community', 'admin'].includes(newRole)) {
+      if (newRole) toast.error('Invalid role'); return;
+    }
     const res = await authFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ role: newRole }) });
     if (res.ok) {
-      setUsers((prev) => prev.map((u) => u._id === id ? { ...u, role: newRole } : u));
+      setUsers(prev => prev.map(u => u._id === id ? { ...u, role: newRole } : u));
       toast.success(`Role changed to ${newRole}`);
     }
   };
 
-  const deleteCoach = async (id) => {
-    if (!confirm('Deactivate this coach?')) return;
-    const res = await authFetch(`/api/coaches/${id}`, { method: 'DELETE' });
-    if (res.ok) { setCoaches((prev) => prev.map((c) => c._id === id ? { ...c, isActive: false } : c)); toast.success('Coach deactivated'); }
+  // ── Create Coach ──
+  const submitCreateCoach = async () => {
+    if (!form.name?.trim() || !form.categoryId) { toast.error('Name and category are required'); return; }
+    setSubmitting(true);
+    const body = {
+      name: form.name.trim(),
+      slug: form.slug || toSlug(form.name),
+      initials: form.initials || autoInitials(form.name),
+      categoryId: form.categoryId,
+      ...(form.title && { title: form.title }),
+      ...(form.bio && { bio: form.bio }),
+      ...(form.whatsapp && { whatsapp: form.whatsapp }),
+      ...(form.email && { email: form.email }),
+      ...(form.yearsExperience !== '' && !isNaN(form.yearsExperience) && { yearsExperience: Number(form.yearsExperience) }),
+      ...(form.ageGroups && { ageGroups: form.ageGroups }),
+      languages: arrFromText(form.languages),
+      venues: arrFromText(form.venues),
+      featuredOrder: Number(form.featuredOrder) || 0,
+      isActive: form.isActive !== false,
+    };
+    const res = await authFetch('/api/coaches', { method: 'POST', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      toast.success('Coach created!');
+      closeModal();
+      await refreshCoaches();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to create coach');
+    }
   };
 
+  // ── Edit Coach ──
+  const submitEditCoach = async () => {
+    if (!form.name?.trim()) { toast.error('Name is required'); return; }
+    setSubmitting(true);
+    const body = {
+      name: form.name.trim(),
+      slug: form.slug || toSlug(form.name),
+      initials: form.initials || autoInitials(form.name),
+      categoryId: form.categoryId,
+      title: form.title || undefined,
+      bio: form.bio || undefined,
+      whatsapp: form.whatsapp || undefined,
+      email: form.email || undefined,
+      ...(form.yearsExperience !== '' && !isNaN(form.yearsExperience) && { yearsExperience: Number(form.yearsExperience) }),
+      ageGroups: form.ageGroups || undefined,
+      languages: arrFromText(form.languages),
+      venues: arrFromText(form.venues),
+      featuredOrder: Number(form.featuredOrder) || 0,
+      isActive: form.isActive !== false,
+    };
+    const res = await authFetch(`/api/coaches/${modalId}`, { method: 'PUT', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      toast.success('Coach updated!');
+      closeModal();
+      await refreshCoaches();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to update coach');
+    }
+  };
+
+  // ── Update Vetting ──
+  const submitVetting = async () => {
+    setSubmitting(true);
+    const vetting = {};
+    VETTING_ITEMS.forEach(({ key }) => {
+      vetting[key] = {
+        status: form[`v_${key}_status`] || 'pending',
+        note: form[`v_${key}_note`] || undefined,
+        ...(form[`v_${key}_status`] === 'verified' ? { date: new Date().toISOString() } : {}),
+      };
+    });
+    const res = await authFetch(`/api/coaches/${modalId}`, { method: 'PUT', body: JSON.stringify({ vetting }) });
+    setSubmitting(false);
+    if (res.ok) {
+      toast.success('Vetting updated!');
+      closeModal();
+      await refreshCoaches();
+    } else {
+      toast.error('Failed to update vetting');
+    }
+  };
+
+  // ── Create Program ──
+  const submitCreateProgram = async () => {
+    if (!form.name?.trim() || !form.categoryId || !form.coachId || !form.pricePerSession || !form.spotsTotal || !form.supervision) {
+      toast.error('Required: name, category, coach, price, spots, supervision'); return;
+    }
+    setSubmitting(true);
+    const body = {
+      name: form.name.trim(),
+      slug: form.slug || toSlug(form.name),
+      categoryId: form.categoryId,
+      coachId: form.coachId,
+      pricePerSession: Number(form.pricePerSession),
+      spotsTotal: Number(form.spotsTotal),
+      supervision: form.supervision,
+      ...(form.ageRange && { ageRange: form.ageRange }),
+      ...(form.ageMin !== '' && !isNaN(form.ageMin) && { ageMin: Number(form.ageMin) }),
+      ...(form.ageMax !== '' && !isNaN(form.ageMax) && { ageMax: Number(form.ageMax) }),
+      ...(form.schedule && { schedule: form.schedule }),
+      ...(form.duration !== '' && !isNaN(form.duration) && { duration: Number(form.duration) }),
+      ...(form.sessions !== '' && !isNaN(form.sessions) && { sessions: Number(form.sessions) }),
+      ...(form.location && { location: form.location }),
+      ...(form.locationNote && { locationNote: form.locationNote }),
+      ...(form.termStart && { termStart: form.termStart }),
+      ...(form.termEnd && { termEnd: form.termEnd }),
+      milestones: arrFromText(form.milestones),
+      highlights: arrFromText(form.highlights),
+      whatToBring: arrFromText(form.whatToBring),
+      ...(form.safetyNote && { safetyNote: form.safetyNote }),
+      gender: form.gender || 'any',
+      isActive: form.isActive !== false,
+    };
+    const res = await authFetch('/api/programs', { method: 'POST', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      toast.success('Program created!');
+      closeModal();
+      await refreshPrograms();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to create program');
+    }
+  };
+
+  // ── Edit Program ──
+  const submitEditProgram = async () => {
+    if (!form.name?.trim()) { toast.error('Name is required'); return; }
+    setSubmitting(true);
+    const body = {
+      name: form.name.trim(),
+      slug: form.slug,
+      categoryId: form.categoryId,
+      coachId: form.coachId,
+      pricePerSession: Number(form.pricePerSession),
+      spotsTotal: Number(form.spotsTotal),
+      supervision: form.supervision,
+      ageRange: form.ageRange || undefined,
+      ...(form.ageMin !== '' && !isNaN(form.ageMin) && { ageMin: Number(form.ageMin) }),
+      ...(form.ageMax !== '' && !isNaN(form.ageMax) && { ageMax: Number(form.ageMax) }),
+      schedule: form.schedule || undefined,
+      ...(form.duration !== '' && !isNaN(form.duration) && { duration: Number(form.duration) }),
+      ...(form.sessions !== '' && !isNaN(form.sessions) && { sessions: Number(form.sessions) }),
+      location: form.location || undefined,
+      locationNote: form.locationNote || undefined,
+      termStart: form.termStart || undefined,
+      termEnd: form.termEnd || undefined,
+      milestones: arrFromText(form.milestones),
+      highlights: arrFromText(form.highlights),
+      whatToBring: arrFromText(form.whatToBring),
+      safetyNote: form.safetyNote || undefined,
+      gender: form.gender || 'any',
+      isActive: form.isActive !== false,
+    };
+    const res = await authFetch(`/api/programs/${modalId}`, { method: 'PUT', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      toast.success('Program updated!');
+      closeModal();
+      await refreshPrograms();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to update program');
+    }
+  };
+
+  // ── Create Product ──
+  const submitCreateProduct = async () => {
+    if (!form.name?.trim() || !form.price) { toast.error('Name and price are required'); return; }
+    setSubmitting(true);
+    const body = {
+      name: form.name.trim(),
+      slug: form.slug || toSlug(form.name),
+      price: Number(form.price),
+      ...(form.categoryId && { categoryId: form.categoryId }),
+      ...(form.brand && { brand: form.brand }),
+      ...(form.description && { description: form.description }),
+      inStock: form.inStock !== false,
+    };
+    const res = await authFetch('/api/shop/products', { method: 'POST', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      toast.success('Product created!');
+      closeModal();
+      await refreshProducts();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to create product');
+    }
+  };
+
+  // ── Create Starter Kit ──
+  const submitCreateKit = async () => {
+    if (!form.name?.trim() || !form.categoryId || !form.kitPrice || !form.individualPrice) {
+      toast.error('Required: name, category, kit price, individual price'); return;
+    }
+    setSubmitting(true);
+    const body = {
+      name: form.name.trim(),
+      slug: form.slug || toSlug(form.name),
+      categoryId: form.categoryId,
+      ...(form.icon && { icon: form.icon }),
+      contents: arrFromText(form.contents),
+      individualPrice: Number(form.individualPrice),
+      kitPrice: Number(form.kitPrice),
+      ...(form.brand && { brand: form.brand }),
+      ...(form.description && { description: form.description }),
+      inStock: form.inStock !== false,
+    };
+    const res = await authFetch('/api/shop/kits', { method: 'POST', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      toast.success('Starter kit created!');
+      closeModal();
+      await refreshKits();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to create kit');
+    }
+  };
+
+  // ── Loading guard ──
   if (loading || !isAdmin) return (
     <div className="min-h-screen bg-cream flex items-center justify-center">
       <div className="text-center">
@@ -168,13 +532,692 @@ export default function AdminPage() {
     </div>
   );
 
+  // ── Computed ──
   const ov = stats?.overview || {};
   const rev = stats?.revenue || {};
-  const newEnq = enquiries.filter((e) => e.status === 'new').length;
-  const activeEnr = enrollments.filter((e) => e.status === 'active').length;
+  const newEnq = enquiries.filter(e => e.status === 'new').length;
+  const activeEnr = enrollments.filter(e => e.status === 'active').length;
+  const filteredCoaches = coaches
+    .filter(c => !coachSearch || c.name.toLowerCase().includes(coachSearch.toLowerCase()) || c.title?.toLowerCase().includes(coachSearch.toLowerCase()))
+    .filter(c => coachCityFilter === 'all' || (c.city || 'abuja') === coachCityFilter);
+  const filteredPrograms = programs
+    .filter(p => !programSearch || p.name.toLowerCase().includes(programSearch.toLowerCase()) || p.coachId?.name?.toLowerCase().includes(programSearch.toLowerCase()))
+    .filter(p => programCityFilter === 'all' || (p.city || 'abuja') === programCityFilter);
 
+  // ── Form field shorthands ──
+  const fVal = (field) => form[field] ?? '';
+  const fChk = (field) => !!form[field];
+
+  // ════════════════════════════════════════════════════════
+  // MODALS
+  // ════════════════════════════════════════════════════════
+  const Overlay = ({ children }) => (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 pt-8 overflow-y-auto" onClick={closeModal}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl" onClick={e => e.stopPropagation()}>
+        {children}
+      </div>
+    </div>
+  );
+
+  const ModalHeader = ({ title }) => (
+    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+      <h2 className="font-serif text-base font-bold text-slate-900">{title}</h2>
+      <button onClick={closeModal} className="w-7 h-7 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
+    </div>
+  );
+
+  const ModalFooter = ({ onSubmit, submitLabel = 'Save' }) => (
+    <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl">
+      <button onClick={closeModal} className="btn-outline text-xs px-4 py-2">Cancel</button>
+      <button onClick={onSubmit} disabled={submitting}
+        className="btn-primary text-xs px-5 py-2 disabled:opacity-60 disabled:cursor-not-allowed">
+        {submitting ? 'Saving...' : submitLabel}
+      </button>
+    </div>
+  );
+
+  const ModalBody = ({ children }) => (
+    <div className="px-5 py-4 space-y-4 max-h-[65vh] overflow-y-auto">{children}</div>
+  );
+
+  const SectionHead = ({ title }) => (
+    <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider pt-1 pb-1.5 border-b border-slate-100">{title}</div>
+  );
+
+  const Row = ({ children }) => <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{children}</div>;
+
+  const FL = ({ label, req, children }) => (
+    <div>
+      <label className="block text-[10px] font-semibold text-slate-600 mb-1">
+        {label}{req && <span className="text-red-400 ml-0.5">*</span>}
+      </label>
+      {children}
+    </div>
+  );
+
+  const inp = (field, extra = {}) => ({
+    value: fVal(field),
+    onChange: setF(field),
+    className: 'input-field text-xs w-full',
+    ...extra,
+  });
+
+  const CatSelect = ({ field, required }) => (
+    <FL label="Category" req={required}>
+      <select {...inp(field)} className="input-field text-xs w-full">
+        <option value="">— Select category —</option>
+        {categories.map(c => <option key={c._id} value={c._id}>{c.icon} {c.name}</option>)}
+      </select>
+    </FL>
+  );
+
+  const CheckField = ({ field, label: lbl }) => (
+    <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none">
+      <input type="checkbox" className="w-3.5 h-3.5 rounded accent-teal-600"
+        checked={fChk(field)} onChange={setF(field)} />
+      {lbl}
+    </label>
+  );
+
+  // ── Coach Create / Edit Modal ──
+  const CoachModal = () => {
+    const isEdit = modal === 'editCoach';
+    const onNameChange = (e) => {
+      const n = e.target.value;
+      setForm(prev => ({
+        ...prev, name: n,
+        slug: prev._slugManual ? prev.slug : toSlug(n),
+        initials: prev._initialsManual ? prev.initials : autoInitials(n),
+      }));
+    };
+    return (
+      <Overlay>
+        <ModalHeader title={isEdit ? 'Edit Coach' : 'Add New Coach'} />
+        <ModalBody>
+          <SectionHead title="Basic Info" />
+          <Row>
+            <FL label="Full Name" req>
+              <input className="input-field text-xs w-full" value={fVal('name')} onChange={onNameChange} placeholder="e.g. Taiwo Adeyemi" />
+            </FL>
+            <CatSelect field="categoryId" required />
+          </Row>
+          <Row>
+            <FL label="Slug (auto-generated)">
+              <input className="input-field text-xs w-full font-mono" value={fVal('slug')}
+                onChange={e => { setF('slug')(e); setFv('_slugManual', true); }}
+                placeholder="e.g. taiwo-adeyemi" />
+            </FL>
+            <FL label="Initials (max 4)">
+              <input className="input-field text-xs w-full" value={fVal('initials')}
+                onChange={e => { setF('initials')(e); setFv('_initialsManual', true); }}
+                placeholder="e.g. TA" maxLength={4} />
+            </FL>
+          </Row>
+          <Row>
+            <FL label="Title / Specialisation">
+              <input {...inp('title')} placeholder="e.g. Head Swimming Coach" />
+            </FL>
+            <FL label="Years Experience">
+              <input {...inp('yearsExperience', { type: 'number', min: 0, placeholder: '5' })} />
+            </FL>
+          </Row>
+          <Row>
+            <FL label="Age Groups">
+              <input {...inp('ageGroups')} placeholder="e.g. 3-12" />
+            </FL>
+            <FL label="Featured Order (0 = first)">
+              <input {...inp('featuredOrder', { type: 'number', min: 0, placeholder: '0' })} />
+            </FL>
+          </Row>
+
+          <SectionHead title="Contact" />
+          <Row>
+            <FL label="WhatsApp Number">
+              <input {...inp('whatsapp')} placeholder="234801234567" />
+            </FL>
+            <FL label="Email">
+              <input {...inp('email', { type: 'email' })} placeholder="coach@email.com" />
+            </FL>
+          </Row>
+
+          <SectionHead title="Profile" />
+          <FL label="Bio">
+            <textarea {...inp('bio')} className="input-field text-xs w-full resize-none" rows={3}
+              placeholder="Brief professional bio..." />
+          </FL>
+          <Row>
+            <FL label="Languages (one per line)">
+              <textarea {...inp('languages')} className="input-field text-xs w-full resize-none" rows={2}
+                placeholder={'English\nHausa\nYoruba'} />
+            </FL>
+            <FL label="Venues (one per line)">
+              <textarea {...inp('venues')} className="input-field text-xs w-full resize-none" rows={2}
+                placeholder={'Wuse Leisure Centre\nGarki Pool'} />
+            </FL>
+          </Row>
+          <CheckField field="isActive" label="Active (visible on site)" />
+        </ModalBody>
+        <ModalFooter onSubmit={isEdit ? submitEditCoach : submitCreateCoach}
+          submitLabel={isEdit ? 'Update Coach' : 'Create Coach'} />
+      </Overlay>
+    );
+  };
+
+  // ── Vetting Modal ──
+  const VettingModal = () => {
+    const coach = coaches.find(c => c._id === modalId);
+    return (
+      <Overlay>
+        <ModalHeader title={`Vetting: ${coach?.name || '...'}`} />
+        <ModalBody>
+          <p className="text-[11px] text-slate-500 bg-blue-50 rounded-lg px-3 py-2">
+            Shield level auto-calculates on save. Tiers 1–2 = <strong>Verified</strong>. All 4 tiers = <strong>Certified</strong>.
+          </p>
+          {[1, 2, 3, 4].map(tier => (
+            <div key={tier}>
+              <div className="flex items-center gap-2 mb-2">
+                <span className={`inline-block text-[9px] font-bold px-2 py-0.5 rounded-full ${TIER_COLORS[tier].pill}`}>
+                  Tier {tier}
+                </span>
+                <span className="text-[10px] text-slate-500">{TIER_COLORS[tier].label}</span>
+              </div>
+              <div className="space-y-1.5">
+                {VETTING_ITEMS.filter(v => v.tier === tier).map(({ key, label: lbl }) => {
+                  const status = fVal(`v_${key}_status`) || 'pending';
+                  const statusColors = {
+                    verified: 'border-emerald-200 bg-emerald-50/50',
+                    failed: 'border-red-200 bg-red-50/50',
+                    expired: 'border-amber-200 bg-amber-50/50',
+                    na: 'border-slate-200 bg-slate-50',
+                    pending: 'border-slate-200 bg-white',
+                  };
+                  return (
+                    <div key={key} className={`flex items-center gap-3 p-2.5 rounded-lg border ${statusColors[status]}`}>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-semibold text-slate-700">{lbl}</div>
+                        <input className="input-field text-[10px] mt-1 py-1 w-full"
+                          placeholder="Note (optional)"
+                          value={fVal(`v_${key}_note`)}
+                          onChange={e => setFv(`v_${key}_note`, e.target.value)} />
+                      </div>
+                      <select className="input-field text-[10px] w-24 py-1 shrink-0"
+                        value={status}
+                        onChange={e => setFv(`v_${key}_status`, e.target.value)}>
+                        {['pending', 'verified', 'failed', 'na', 'expired'].map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </ModalBody>
+        <ModalFooter onSubmit={submitVetting} submitLabel="Save Vetting" />
+      </Overlay>
+    );
+  };
+
+  // ── Program Create / Edit Modal ──
+  const ProgramModal = () => {
+    const isEdit = modal === 'editProgram';
+    const onNameChange = (e) => {
+      const n = e.target.value;
+      setForm(prev => ({ ...prev, name: n, slug: prev._slugManual ? prev.slug : toSlug(n) }));
+    };
+    const activeCoaches = coaches.filter(c => c.isActive);
+    return (
+      <Overlay>
+        <ModalHeader title={isEdit ? 'Edit Program' : 'Add New Program'} />
+        <ModalBody>
+          <SectionHead title="Basic Info" />
+          <Row>
+            <FL label="Program Name" req>
+              <input className="input-field text-xs w-full" value={fVal('name')} onChange={onNameChange}
+                placeholder="e.g. Beginner Swimming – Wuse" />
+            </FL>
+            <FL label="Slug (auto-generated)">
+              <input className="input-field text-xs w-full font-mono" value={fVal('slug')}
+                onChange={e => { setF('slug')(e); setFv('_slugManual', true); }} />
+            </FL>
+          </Row>
+          <Row>
+            <CatSelect field="categoryId" required />
+            <FL label="Coach" req>
+              <select {...inp('coachId')} className="input-field text-xs w-full">
+                <option value="">— Select coach —</option>
+                {activeCoaches.map(c => (
+                  <option key={c._id} value={c._id}>{c.name} ({c.categoryId?.icon || ''})</option>
+                ))}
+              </select>
+            </FL>
+          </Row>
+
+          <SectionHead title="Pricing & Capacity" />
+          <Row>
+            <FL label="Price per Session (₦)" req>
+              <input {...inp('pricePerSession', { type: 'number', min: 0, placeholder: '5000' })} />
+            </FL>
+            <FL label="Total Spots" req>
+              <input {...inp('spotsTotal', { type: 'number', min: 1, placeholder: '8' })} />
+            </FL>
+          </Row>
+
+          <SectionHead title="Schedule & Structure" />
+          <Row>
+            <FL label="Schedule">
+              <input {...inp('schedule')} placeholder="Mon & Wed, 9:00 AM" />
+            </FL>
+            <FL label="Supervision" req>
+              <select {...inp('supervision')} className="input-field text-xs w-full">
+                <option value="">— Select —</option>
+                {SUPERVISION_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </FL>
+          </Row>
+          <Row>
+            <FL label="Duration (minutes)">
+              <input {...inp('duration', { type: 'number', min: 0, placeholder: '60' })} />
+            </FL>
+            <FL label="Total Sessions in Term">
+              <input {...inp('sessions', { type: 'number', min: 1, placeholder: '12' })} />
+            </FL>
+          </Row>
+          <Row>
+            <FL label="Term Start">
+              <input {...inp('termStart', { type: 'date' })} />
+            </FL>
+            <FL label="Term End">
+              <input {...inp('termEnd', { type: 'date' })} />
+            </FL>
+          </Row>
+
+          <SectionHead title="Ages, Gender & Location" />
+          <div className="grid grid-cols-3 gap-3">
+            <FL label="Age Range (display)">
+              <input {...inp('ageRange')} placeholder="3–5 yrs" />
+            </FL>
+            <FL label="Age Min">
+              <input {...inp('ageMin', { type: 'number', min: 0, placeholder: '3' })} />
+            </FL>
+            <FL label="Age Max">
+              <input {...inp('ageMax', { type: 'number', min: 0, placeholder: '5' })} />
+            </FL>
+          </div>
+          <Row>
+            <FL label="Gender Restriction">
+              <select {...inp('gender')} className="input-field text-xs w-full">
+                <option value="any">Any gender</option>
+                <option value="female">👧 Girls Only</option>
+                <option value="male">👦 Boys Only</option>
+              </select>
+            </FL>
+          </Row>
+          <Row>
+            <FL label="Location">
+              <input {...inp('location')} placeholder="Wuse Leisure Centre" />
+            </FL>
+            <FL label="Location Note">
+              <input {...inp('locationNote')} placeholder="Pool entrance, left side" />
+            </FL>
+          </Row>
+
+          <SectionHead title="Content (one item per line)" />
+          <Row>
+            <FL label="Milestones">
+              <textarea {...inp('milestones')} className="input-field text-xs w-full resize-none" rows={3}
+                placeholder={'Water Comfort\nFloating Basics\nBasic Strokes'} />
+            </FL>
+            <FL label="Highlights">
+              <textarea {...inp('highlights')} className="input-field text-xs w-full resize-none" rows={3}
+                placeholder={'Small groups\nCertified coach\nProgress reports'} />
+            </FL>
+          </Row>
+          <Row>
+            <FL label="What to Bring">
+              <textarea {...inp('whatToBring')} className="input-field text-xs w-full resize-none" rows={2}
+                placeholder={'Swimsuit\nTowel\nWater bottle'} />
+            </FL>
+            <FL label="Safety Note">
+              <textarea {...inp('safetyNote')} className="input-field text-xs w-full resize-none" rows={2}
+                placeholder="Any safety requirements..." />
+            </FL>
+          </Row>
+          <CheckField field="isActive" label="Active (visible on site)" />
+        </ModalBody>
+        <ModalFooter onSubmit={isEdit ? submitEditProgram : submitCreateProgram}
+          submitLabel={isEdit ? 'Update Program' : 'Create Program'} />
+      </Overlay>
+    );
+  };
+
+  // ── Product Modal ──
+  const ProductModal = () => {
+    const onNameChange = (e) => {
+      const n = e.target.value;
+      setForm(prev => ({ ...prev, name: n, slug: prev._slugManual ? prev.slug : toSlug(n) }));
+    };
+    return (
+      <Overlay>
+        <ModalHeader title="Add New Product" />
+        <ModalBody>
+          <SectionHead title="Product Details" />
+          <Row>
+            <FL label="Product Name" req>
+              <input className="input-field text-xs w-full" value={fVal('name')} onChange={onNameChange}
+                placeholder="e.g. Speedo Adult Goggles" />
+            </FL>
+            <FL label="Slug (auto-generated)">
+              <input className="input-field text-xs w-full font-mono" value={fVal('slug')}
+                onChange={e => { setF('slug')(e); setFv('_slugManual', true); }} />
+            </FL>
+          </Row>
+          <Row>
+            <FL label="Price (₦)" req>
+              <input {...inp('price', { type: 'number', min: 0, placeholder: '3500' })} />
+            </FL>
+            <CatSelect field="categoryId" />
+          </Row>
+          <FL label="Brand">
+            <input {...inp('brand')} placeholder="Speedo, Adidas, Nike..." />
+          </FL>
+          <FL label="Description">
+            <textarea {...inp('description')} className="input-field text-xs w-full resize-none" rows={2}
+              placeholder="Brief product description..." />
+          </FL>
+          <CheckField field="inStock" label="In Stock" />
+        </ModalBody>
+        <ModalFooter onSubmit={submitCreateProduct} submitLabel="Create Product" />
+      </Overlay>
+    );
+  };
+
+  // ── Starter Kit Modal ──
+  const KitModal = () => {
+    const onNameChange = (e) => {
+      const n = e.target.value;
+      setForm(prev => ({ ...prev, name: n, slug: prev._slugManual ? prev.slug : toSlug(n) }));
+    };
+    const saving = fVal('individualPrice') && fVal('kitPrice')
+      ? Math.max(0, Number(fVal('individualPrice')) - Number(fVal('kitPrice')))
+      : 0;
+    const savingsPct = fVal('individualPrice') && saving > 0
+      ? Math.round((saving / Number(fVal('individualPrice'))) * 100)
+      : 0;
+    return (
+      <Overlay>
+        <ModalHeader title="Add New Starter Kit" />
+        <ModalBody>
+          <SectionHead title="Kit Details" />
+          <Row>
+            <FL label="Kit Name" req>
+              <input className="input-field text-xs w-full" value={fVal('name')} onChange={onNameChange}
+                placeholder="e.g. Swimming Starter Kit" />
+            </FL>
+            <CatSelect field="categoryId" required />
+          </Row>
+          <Row>
+            <FL label="Slug (auto-generated)">
+              <input className="input-field text-xs w-full font-mono" value={fVal('slug')}
+                onChange={e => { setF('slug')(e); setFv('_slugManual', true); }} />
+            </FL>
+            <FL label="Icon (emoji)">
+              <input {...inp('icon')} placeholder="🏊" className="input-field text-xs w-full text-xl" />
+            </FL>
+          </Row>
+
+          <SectionHead title="Pricing" />
+          <Row>
+            <FL label="Individual Price (₦) — total if bought separately" req>
+              <input {...inp('individualPrice', { type: 'number', min: 0, placeholder: '8000' })} />
+            </FL>
+            <FL label="Kit Price (₦) — discounted bundle price" req>
+              <input {...inp('kitPrice', { type: 'number', min: 0, placeholder: '5000' })} />
+            </FL>
+          </Row>
+          {saving > 0 && (
+            <div className="text-[11px] text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2 font-semibold">
+              Saving: {fmt(saving)} ({savingsPct}% off)
+            </div>
+          )}
+
+          <SectionHead title="Contents & Info" />
+          <FL label="Kit Contents (one item per line)" req>
+            <textarea {...inp('contents')} className="input-field text-xs w-full resize-none" rows={4}
+              placeholder={'Swim goggles\nSwim cap\nTowel\nWater bottle'} />
+          </FL>
+          <Row>
+            <FL label="Brand">
+              <input {...inp('brand')} placeholder="Speedo, Arena..." />
+            </FL>
+            <FL label="Description">
+              <input {...inp('description')} placeholder="Brief kit description" />
+            </FL>
+          </Row>
+          <CheckField field="inStock" label="In Stock" />
+        </ModalBody>
+        <ModalFooter onSubmit={submitCreateKit} submitLabel="Create Starter Kit" />
+      </Overlay>
+    );
+  };
+
+  // ── Tournament submit handlers ──
+  const submitCreateTournament = async () => {
+    setSubmitting(true);
+    const body = {
+      name: form.name, type: form.type || 'individual',
+      date: form.date || undefined,
+      registrationDeadline: form.registrationDeadline || undefined,
+      status: form.status || 'upcoming',
+      venue: form.venue || undefined, city: form.city || 'abuja',
+      ageRange: form.ageRange || undefined,
+      maxTeams: form.maxTeams ? Number(form.maxTeams) : undefined,
+      entryFee: form.entryFee != null ? Number(form.entryFee) : 0,
+      prizes: form.prizes || undefined,
+      description: form.description || undefined,
+      categoryId: form.categoryId || undefined,
+      isActive: form.isActive !== false,
+    };
+    const res = await authFetch('/api/tournaments', { method: 'POST', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      const data = await res.json();
+      setTournaments(prev => [data.tournament, ...prev]);
+      toast.success('Tournament created');
+      closeModal();
+    } else {
+      const e = await res.json().catch(() => ({}));
+      toast.error(e.error || 'Create failed');
+    }
+  };
+
+  const submitEditTournament = async () => {
+    setSubmitting(true);
+    const body = {
+      name: form.name, type: form.type,
+      date: form.date || undefined,
+      registrationDeadline: form.registrationDeadline || undefined,
+      status: form.status,
+      venue: form.venue || undefined, city: form.city,
+      ageRange: form.ageRange || undefined,
+      maxTeams: form.maxTeams ? Number(form.maxTeams) : undefined,
+      entryFee: form.entryFee != null ? Number(form.entryFee) : 0,
+      prizes: form.prizes || undefined,
+      description: form.description || undefined,
+      categoryId: form.categoryId || undefined,
+      isActive: form.isActive !== false,
+    };
+    const res = await authFetch(`/api/tournaments/${modalId}`, { method: 'PUT', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      const data = await res.json();
+      setTournaments(prev => prev.map(t => t._id === modalId ? data.tournament : t));
+      toast.success('Tournament updated');
+      closeModal();
+    } else {
+      const e = await res.json().catch(() => ({}));
+      toast.error(e.error || 'Update failed');
+    }
+  };
+
+  const submitTournamentResults = async () => {
+    setSubmitting(true);
+    let results;
+    try { results = JSON.parse(form.results || '[]'); } catch { toast.error('Invalid JSON for results'); setSubmitting(false); return; }
+    const res = await authFetch(`/api/tournaments/${modalId}`, { method: 'PUT', body: JSON.stringify({ results, status: 'completed' }) });
+    setSubmitting(false);
+    if (res.ok) {
+      const data = await res.json();
+      setTournaments(prev => prev.map(t => t._id === modalId ? data.tournament : t));
+      toast.success('Results saved & tournament completed');
+      closeModal();
+    } else {
+      const e = await res.json().catch(() => ({}));
+      toast.error(e.error || 'Update failed');
+    }
+  };
+
+  const TournamentModal = () => {
+    const isEdit = modal === 'editTournament';
+    const STATUS_OPTS = ['upcoming', 'registration', 'in-progress', 'completed', 'cancelled'];
+    const TYPE_OPTS = ['individual', 'team', 'relay', 'league', 'knockout'];
+    return (
+      <Overlay>
+        <ModalHeader title={isEdit ? 'Edit Tournament' : 'New Tournament'} />
+        <ModalBody>
+          <Row>
+            <FL label="Name" req>
+              <input {...inp('name')} placeholder="e.g. Swimming Relay Term 1" />
+            </FL>
+            <FL label="Type" req>
+              <select className="input-field text-xs w-full" value={fVal('type') || 'individual'} onChange={setF('type')}>
+                {TYPE_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </FL>
+          </Row>
+          <Row>
+            <FL label="Category">
+              <select className="input-field text-xs w-full" value={fVal('categoryId')} onChange={setF('categoryId')}>
+                <option value="">— none —</option>
+                {categories.map(c => <option key={c._id} value={c._id}>{c.icon} {c.name}</option>)}
+              </select>
+            </FL>
+            <FL label="Status">
+              <select className="input-field text-xs w-full" value={fVal('status') || 'upcoming'} onChange={setF('status')}>
+                {STATUS_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </FL>
+          </Row>
+          <Row>
+            <FL label="Date"><input {...inp('date', { type: 'date' })} /></FL>
+            <FL label="Registration Deadline"><input {...inp('registrationDeadline', { type: 'date' })} /></FL>
+          </Row>
+          <Row>
+            <FL label="Venue"><input {...inp('venue')} placeholder="e.g. Abuja National Stadium" /></FL>
+            <FL label="City">
+              <select className="input-field text-xs w-full" value={fVal('city') || 'abuja'} onChange={setF('city')}>
+                <option value="abuja">Abuja</option>
+                <option value="lagos">Lagos</option>
+              </select>
+            </FL>
+          </Row>
+          <Row>
+            <FL label="Age Range"><input {...inp('ageRange')} placeholder="e.g. 5-12 yrs" /></FL>
+            <FL label="Max Teams (0 = unlimited)"><input {...inp('maxTeams', { type: 'number', min: 0 })} placeholder="16" /></FL>
+          </Row>
+          <Row>
+            <FL label="Entry Fee (₦, 0 = free)"><input {...inp('entryFee', { type: 'number', min: 0 })} /></FL>
+            <FL label="Prizes"><input {...inp('prizes')} placeholder="e.g. Medals + certificates" /></FL>
+          </Row>
+          <FL label="Description">
+            <textarea {...inp('description')} className="input-field text-xs w-full resize-none" rows={3}
+              placeholder="Brief description visible to parents..." />
+          </FL>
+          <CheckField field="isActive" label="Active (visible on site)" />
+        </ModalBody>
+        <ModalFooter
+          onSubmit={isEdit ? submitEditTournament : submitCreateTournament}
+          submitLabel={isEdit ? 'Save Changes' : 'Create Tournament'}
+        />
+      </Overlay>
+    );
+  };
+
+  const TournamentResultsModal = () => (
+    <Overlay>
+      <ModalHeader title="Update Results" />
+      <ModalBody>
+        <p className="text-[11px] text-slate-500 mb-3">
+          Paste results as JSON array. Each entry: <code className="bg-slate-100 px-1 rounded text-[10px]">{`{"position":1,"teamName":"...","points":100,"notes":"..."}`}</code>
+        </p>
+        <FL label="Results JSON">
+          <textarea value={fVal('results')} onChange={setF('results')}
+            className="input-field text-xs w-full font-mono resize-none" rows={8}
+            placeholder={`[\n  {"position":1,"teamName":"Team Alpha","points":100},\n  {"position":2,"teamName":"Team Beta","points":80}\n]`} />
+        </FL>
+        <p className="text-[10px] text-amber-700 mt-2">Saving will mark the tournament as <strong>completed</strong> and auto-award TOURNAMENT_WIN to position-1 teams.</p>
+      </ModalBody>
+      <ModalFooter onSubmit={submitTournamentResults} submitLabel="Save Results & Complete" />
+    </Overlay>
+  );
+
+  // ════════════════════════════════════════════════════════
+  // JSX
+  // ════════════════════════════════════════════════════════
   return (
     <div className="min-h-screen bg-slate-50 flex">
+
+      {/* ── Modal portal ── */}
+      {(modal === 'createCoach' || modal === 'editCoach') && <CoachModal />}
+      {modal === 'vetting' && <VettingModal />}
+      {(modal === 'createProgram' || modal === 'editProgram') && <ProgramModal />}
+      {modal === 'createProduct' && <ProductModal />}
+      {modal === 'createKit' && <KitModal />}
+      {(modal === 'createTournament' || modal === 'editTournament') && <TournamentModal />}
+      {modal === 'tournamentResults' && <TournamentResultsModal />}
+
+      {/* ── Award Achievement Modal ── */}
+      {awardModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setAwardModal(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <div className="font-bold text-sm">Award Achievement</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">{awardModal.enr.childName}</div>
+              </div>
+              <button onClick={() => setAwardModal(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+            </div>
+            <div className="p-5">
+              {awardModal.achievements.length === 0 ? (
+                <p className="text-[11px] text-slate-400 text-center py-4">No achievements found for this category.</p>
+              ) : (
+                <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                  {awardModal.achievements.map(ach => (
+                    <label key={ach._id} className={`flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${awardAchId === ach._id ? 'border-amber-400 bg-amber-50' : 'border-slate-100 hover:bg-slate-50'}`}>
+                      <input type="radio" name="achievement" value={ach._id} checked={awardAchId === ach._id} onChange={() => setAwardAchId(ach._id)} className="accent-amber-500" />
+                      <span className="text-xl">{ach.icon || '🏅'}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold">{ach.name}</div>
+                        <div className="text-[9px] text-slate-400 truncate">{ach.description}</div>
+                        <div className="text-[9px] text-amber-600 mt-0.5">{ach.points} pts · {ach.rarity}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2 mt-4">
+                <button onClick={submitAward} disabled={!awardAchId || awarding}
+                  className="btn-primary btn-sm flex-1 disabled:opacity-60 disabled:cursor-not-allowed">
+                  {awarding ? 'Awarding...' : 'Award Badge'}
+                </button>
+                <button onClick={() => setAwardModal(null)} className="btn-outline btn-sm">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Desktop Sidebar ── */}
       <aside className="w-52 bg-white border-r border-slate-200/80 min-h-screen shrink-0 hidden lg:flex flex-col">
         <div className="p-4 border-b border-slate-100">
@@ -208,7 +1251,11 @@ export default function AdminPage() {
 
       {/* ── Mobile Header ── */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-slate-200 px-3 py-2 flex items-center justify-between">
-        <button onClick={() => setSideOpen(true)} className="p-1.5"><svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" /></svg></button>
+        <button onClick={() => setSideOpen(true)} className="p-1.5">
+          <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
         <span className="font-serif text-sm text-teal-primary">Admin</span>
         <Link href="/" className="text-[10px] text-slate-400">View Site →</Link>
       </div>
@@ -216,7 +1263,7 @@ export default function AdminPage() {
       {/* ── Mobile Sidebar Overlay ── */}
       {sideOpen && (
         <div className="lg:hidden fixed inset-0 z-50 bg-black/30" onClick={() => setSideOpen(false)}>
-          <div onClick={(e) => e.stopPropagation()} className="w-64 bg-white h-full shadow-xl p-3 space-y-0.5">
+          <div onClick={e => e.stopPropagation()} className="w-64 bg-white h-full shadow-xl p-3 space-y-0.5">
             <div className="flex justify-between items-center mb-3 px-2">
               <span className="font-serif text-sm text-teal-primary">Admin</span>
               <button onClick={() => setSideOpen(false)} className="text-slate-400">✕</button>
@@ -242,7 +1289,6 @@ export default function AdminPage() {
               <h1 className="font-serif text-xl mb-4">Dashboard</h1>
               {loadingData ? <p className="text-sm text-slate-400">Loading...</p> : (
                 <>
-                  {/* KPI Cards */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
                     {[
                       { l: 'Revenue', v: fmt(ov.totalRevenue || 0), sub: `${rev.payments || 0} transactions`, color: 'text-emerald-700' },
@@ -259,17 +1305,16 @@ export default function AdminPage() {
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {/* Capacity */}
                     <div className="bg-white rounded-xl border border-slate-200/80 p-4">
                       <div className="flex justify-between items-center mb-3">
                         <div className="font-bold text-xs">Program Capacity</div>
                         <span className="text-[10px] text-slate-400">{ov.usedSpots || 0}/{ov.totalSpots || 0} spots</span>
                       </div>
                       <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full transition-all ${(ov.capacityPercent || 0) > 85 ? 'bg-red-500' : (ov.capacityPercent || 0) > 60 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${ov.capacityPercent || 0}%` }} />
+                        <div className={`h-full rounded-full transition-all ${(ov.capacityPercent || 0) > 85 ? 'bg-red-500' : (ov.capacityPercent || 0) > 60 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${ov.capacityPercent || 0}%` }} />
                       </div>
                       <div className="text-[10px] text-slate-500 mt-1.5">{ov.capacityPercent || 0}% filled</div>
-                      {/* Per-program breakdown */}
                       <div className="mt-3 space-y-1.5">
                         {programs.slice(0, 5).map((p) => {
                           const filled = pct(p.spotsTaken, p.spotsTotal);
@@ -286,7 +1331,6 @@ export default function AdminPage() {
                       </div>
                     </div>
 
-                    {/* Revenue by Type */}
                     <div className="bg-white rounded-xl border border-slate-200/80 p-4">
                       <div className="font-bold text-xs mb-3">Revenue Breakdown</div>
                       {rev.byType && Object.entries(rev.byType).length > 0 ? (
@@ -304,12 +1348,9 @@ export default function AdminPage() {
                             <span className="font-semibold">{fmt(rev.tax || 0)}</span>
                           </div>
                         </div>
-                      ) : (
-                        <p className="text-[11px] text-slate-400">No revenue data yet.</p>
-                      )}
+                      ) : <p className="text-[11px] text-slate-400">No revenue data yet.</p>}
                     </div>
 
-                    {/* Recent Enquiries */}
                     <div className="bg-white rounded-xl border border-slate-200/80 p-4">
                       <div className="flex justify-between items-center mb-3">
                         <div className="font-bold text-xs">Recent Enquiries</div>
@@ -330,7 +1371,6 @@ export default function AdminPage() {
                       {enquiries.length === 0 && <p className="text-[11px] text-slate-400 text-center py-4">No enquiries yet.</p>}
                     </div>
 
-                    {/* Recent Enrollments */}
                     <div className="bg-white rounded-xl border border-slate-200/80 p-4">
                       <div className="flex justify-between items-center mb-3">
                         <div className="font-bold text-xs">Recent Enrollments</div>
@@ -358,9 +1398,10 @@ export default function AdminPage() {
             <div className="animate-fade-in">
               <div className="flex items-center justify-between mb-4">
                 <h1 className="font-serif text-xl">Enquiries <span className="text-sm font-sans text-slate-400">({enquiries.length})</span></h1>
-                <div className="flex gap-1">
-                  {['all', 'new', 'contacted', 'enrolled', 'declined'].map((f) => (
-                    <button key={f} onClick={() => setEnqFilter(f)} className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold ${enqFilter === f ? 'bg-teal-primary text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>
+                <div className="flex gap-1 flex-wrap">
+                  {['all', 'new', 'contacted', 'enrolled', 'declined'].map(f => (
+                    <button key={f} onClick={() => setEnqFilter(f)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold ${enqFilter === f ? 'bg-teal-primary text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>
                       {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
                       {f === 'new' && newEnq > 0 && <span className="ml-1 text-[8px]">({newEnq})</span>}
                     </button>
@@ -368,7 +1409,7 @@ export default function AdminPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                {enquiries.filter((e) => enqFilter === 'all' || e.status === enqFilter).map((enq) => (
+                {enquiries.filter(e => enqFilter === 'all' || e.status === enqFilter).map(enq => (
                   <div key={enq._id} className={`bg-white rounded-xl border p-4 ${enq.status === 'new' ? 'border-red-200 bg-red-50/30' : 'border-slate-200/80'}`}>
                     <div className="flex justify-between mb-2">
                       <div>
@@ -386,13 +1427,17 @@ export default function AdminPage() {
                     <div className="flex gap-1.5 flex-wrap">
                       {enq.status === 'new' && <button onClick={() => updateEnquiry(enq._id, 'contacted')} className="btn-primary btn-sm text-[10px]">Mark Contacted ✓</button>}
                       {enq.status === 'contacted' && <button onClick={() => updateEnquiry(enq._id, 'enrolled')} className="btn-primary btn-sm text-[10px]">Mark Enrolled ✓</button>}
-                      <a href={`https://wa.me/${(enq.phone || '').replace(/^0/, '234')}?text=${encodeURIComponent(`Hi ${enq.parentName}, this is SkillPadi!`)}`} target="_blank" rel="noopener noreferrer" className="btn-sm bg-[#25D366] text-white rounded-lg text-[10px] font-semibold px-2.5 py-1">💬 WhatsApp</a>
+                      <a href={`https://wa.me/${(enq.phone || '').replace(/^0/, '234')}?text=${encodeURIComponent(`Hi ${enq.parentName}, this is SkillPadi!`)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="btn-sm bg-[#25D366] text-white rounded-lg text-[10px] font-semibold px-2.5 py-1">
+                        💬 WhatsApp
+                      </a>
                       {!['declined', 'enrolled'].includes(enq.status) && <button onClick={() => updateEnquiry(enq._id, 'declined')} className="btn-outline btn-sm text-[10px] text-red-500 border-red-200">Decline</button>}
                       <button onClick={() => deleteEnquiry(enq._id)} className="btn-sm text-[10px] text-slate-400 hover:text-red-500">🗑️</button>
                     </div>
                   </div>
                 ))}
-                {enquiries.filter((e) => enqFilter === 'all' || e.status === enqFilter).length === 0 && (
+                {enquiries.filter(e => enqFilter === 'all' || e.status === enqFilter).length === 0 && (
                   <div className="bg-white rounded-xl border border-slate-200/80 p-8 text-center text-slate-400 text-sm">No enquiries found.</div>
                 )}
               </div>
@@ -414,7 +1459,7 @@ export default function AdminPage() {
                     <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Actions</th>
                   </tr></thead>
                   <tbody>
-                    {enrollments.map((enr) => {
+                    {enrollments.map(enr => {
                       const prog = enr.programId || {};
                       const done = pct(enr.sessionsCompleted || 0, prog.sessions || 1);
                       return (
@@ -428,9 +1473,30 @@ export default function AdminPage() {
                           </td>
                           <td className="p-3"><span className={`badge ${enr.status === 'active' ? 'badge-green' : enr.status === 'completed' ? 'badge-blue' : 'badge-amber'}`}>{enr.status}</span></td>
                           <td className="p-3">
-                            {enr.status === 'active' && (
-                              <button onClick={() => updateEnrollment(enr._id, { sessionsCompleted: (enr.sessionsCompleted || 0) + 1 })} className="btn-outline btn-sm text-[9px]">+1 Session</button>
-                            )}
+                            <div className="flex gap-1 flex-wrap">
+                              {enr.status === 'active' && (
+                                <button onClick={() => updateEnrollment(enr._id, { sessionsCompleted: (enr.sessionsCompleted || 0) + 1 })}
+                                  className="btn-outline btn-sm text-[9px]">+1</button>
+                              )}
+                              {enr.status === 'active' && (
+                                <button onClick={() => updateEnrollment(enr._id, { status: 'completed' })}
+                                  className="btn-sm text-[9px] bg-blue-50 text-blue-600 border border-blue-200 rounded-lg px-2 py-1 font-semibold">Complete</button>
+                              )}
+                              {enr.status === 'active' && (
+                                <button onClick={() => updateEnrollment(enr._id, { status: 'paused' })}
+                                  className="btn-sm text-[9px] bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-2 py-1 font-semibold">Pause</button>
+                              )}
+                              {enr.status === 'paused' && (
+                                <button onClick={() => updateEnrollment(enr._id, { status: 'active' })}
+                                  className="btn-sm text-[9px] bg-green-50 text-green-700 border border-green-200 rounded-lg px-2 py-1 font-semibold">Resume</button>
+                              )}
+                              {!['cancelled', 'completed'].includes(enr.status) && (
+                                <button onClick={() => { if (confirm('Cancel this enrollment?')) updateEnrollment(enr._id, { status: 'cancelled' }); }}
+                                  className="btn-sm text-[9px] bg-red-50 text-red-600 border border-red-200 rounded-lg px-2 py-1 font-semibold">Cancel</button>
+                              )}
+                              <button onClick={() => openAwardModal(enr)}
+                                className="btn-sm text-[9px] bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-2 py-1 font-semibold">🏅 Award</button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -457,17 +1523,15 @@ export default function AdminPage() {
                     <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Actions</th>
                   </tr></thead>
                   <tbody>
-                    {users.map((u) => (
+                    {users.map(u => (
                       <tr key={u._id} className="border-b border-slate-50 hover:bg-slate-50/50">
                         <td className="p-3 font-semibold">{u.name || '—'}</td>
                         <td className="p-3 text-[10px]">{u.email}<br /><span className="text-slate-400">{u.phone || '—'}</span></td>
-                        <td className="p-3">{u.children?.length > 0 ? u.children.map((c) => `${c.name} (${c.age})`).join(', ') : '—'}</td>
+                        <td className="p-3 text-[10px]">{u.children?.length > 0 ? u.children.map(c => `${c.name} (${c.age})`).join(', ') : <span className="text-slate-400">—</span>}</td>
                         <td className="p-3"><span className={`badge ${u.membershipPaid ? 'badge-green' : 'badge-amber'}`}>{u.membershipPaid ? 'Active' : 'Pending'}</span></td>
                         <td className="p-3 text-[10px] text-slate-400">{new Date(u.createdAt).toLocaleDateString()}</td>
                         <td className="p-3">
-                          <button onClick={() => changeUserRole(u._id, u.role)} className="btn-outline btn-sm text-[9px]">
-                            {u.role} ✎
-                          </button>
+                          <button onClick={() => changeUserRole(u._id, u.role)} className="btn-outline btn-sm text-[9px]">{u.role} ✎</button>
                         </td>
                       </tr>
                     ))}
@@ -481,83 +1545,258 @@ export default function AdminPage() {
           {/* ════════ COACHES ════════ */}
           {tab === 'coaches' && (
             <div className="animate-fade-in">
-              <h1 className="font-serif text-xl mb-4">Coaches <span className="text-sm font-sans text-slate-400">({coaches.length})</span></h1>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {coaches.map((c) => {
-                  const cat = c.categoryId || {};
-                  return (
-                    <div key={c._id} className="bg-white rounded-xl border border-slate-200/80 p-4">
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm" style={{ background: `linear-gradient(135deg, ${cat.color || '#0F766E'}, ${cat.color || '#0F766E'}88)` }}>{c.initials}</div>
-                        <div>
-                          <div className="font-bold text-sm">{c.name}</div>
-                          <div className="text-[10px]" style={{ color: cat.color }}>{cat.icon} {c.title}</div>
+              <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+                <h1 className="font-serif text-xl">Coaches <span className="text-sm font-sans text-slate-400">({coaches.length})</span></h1>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    className="input-field text-xs py-1.5 w-28"
+                    value={coachCityFilter}
+                    onChange={e => setCoachCityFilter(e.target.value)}>
+                    <option value="all">All Cities</option>
+                    <option value="abuja">🏙️ Abuja</option>
+                    <option value="lagos">🌊 Lagos</option>
+                  </select>
+                  <input
+                    className="input-field text-xs py-1.5 w-40"
+                    placeholder="Search coaches..."
+                    value={coachSearch}
+                    onChange={e => setCoachSearch(e.target.value)}
+                  />
+                  <button onClick={openCreateCoach} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5">
+                    <span className="text-sm leading-none">+</span> Add Coach
+                  </button>
+                </div>
+              </div>
+
+              {loadingData ? (
+                <p className="text-sm text-slate-400">Loading...</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filteredCoaches.map(c => {
+                    const cat = c.categoryId || {};
+                    const vettedCount = VETTING_ITEMS.filter(v => c.vetting?.[v.key]?.status === 'verified' || c.vetting?.[v.key]?.status === 'na').length;
+                    return (
+                      <div key={c._id} className={`bg-white rounded-xl border p-4 ${!c.isActive ? 'opacity-60 border-slate-200' : 'border-slate-200/80'}`}>
+                        <div className="flex items-start gap-3 mb-3">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0"
+                            style={{ background: `linear-gradient(135deg, ${cat.color || '#0F766E'}, ${cat.color || '#0F766E'}88)` }}>
+                            {c.initials}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-sm truncate">{c.name}</div>
+                            <div className="text-[10px] truncate" style={{ color: cat.color || '#64748b' }}>{cat.icon} {c.title || cat.name}</div>
+                          </div>
+                          {!c.isActive && <span className="badge badge-gray text-[8px] shrink-0">Inactive</span>}
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                          <span className={`badge ${c.shieldLevel === 'certified' ? 'badge-green' : c.shieldLevel === 'verified' ? 'badge-blue' : 'badge-amber'}`}>
+                            🛡️ {c.shieldLevel}
+                          </span>
+                          {c.rating > 0 && <span className="text-[10px] text-slate-400">⭐ {c.rating} ({c.reviewCount})</span>}
+                          {c.yearsExperience > 0 && <span className="text-[10px] text-slate-400">{c.yearsExperience}y exp</span>}
+                        </div>
+
+                        {/* Vetting progress bar */}
+                        <div className="mb-3">
+                          <div className="flex justify-between text-[9px] text-slate-400 mb-1">
+                            <span>Vetting</span>
+                            <span>{vettedCount}/14</span>
+                          </div>
+                          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${vettedCount === 14 ? 'bg-emerald-500' : vettedCount >= 7 ? 'bg-blue-500' : 'bg-amber-500'}`}
+                              style={{ width: `${(vettedCount / 14) * 100}%` }} />
+                          </div>
+                        </div>
+
+                        {c.whatsapp && <div className="text-[10px] text-slate-400 mb-2">📱 {c.whatsapp}</div>}
+
+                        <div className="flex gap-1.5 flex-wrap">
+                          <Link href={`/coaches/${c.slug}`} className="btn-outline btn-sm text-[9px]">View</Link>
+                          <button onClick={() => openEditCoach(c)} className="btn-outline btn-sm text-[9px]">Edit ✎</button>
+                          <button onClick={() => openVetting(c)} className="btn-sm text-[9px] bg-blue-50 text-blue-600 border border-blue-200 rounded-lg px-2 py-1 font-semibold">🛡️ Vetting</button>
+                          <button onClick={() => toggleCoachActive(c._id, c.isActive)}
+                            className={`btn-sm text-[9px] rounded-lg font-semibold px-2 py-1 ${c.isActive ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-600 border border-green-200'}`}>
+                            {c.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
                         </div>
                       </div>
-                      <div className="flex flex-wrap gap-1.5 mb-2">
-                        <span className={`badge ${c.shieldLevel === 'certified' ? 'badge-green' : c.shieldLevel === 'verified' ? 'badge-blue' : 'badge-amber'}`}>🛡️ {c.shieldLevel}</span>
-                        <span className="text-[10px] text-slate-400">⭐ {c.rating} ({c.reviewCount})</span>
-                        <span className="text-[10px] text-slate-400">{c.yearsExperience} yrs</span>
-                      </div>
-                      <div className="text-[10px] text-slate-400">{c.whatsapp}</div>
-                      <div className="flex gap-1.5 mt-2">
-                        <Link href={`/coaches/${c.slug}`} className="btn-outline btn-sm text-[9px]">View</Link>
-                        <button onClick={() => toggleCoachActive(c._id, c.isActive)} className={`btn-sm text-[9px] rounded-lg font-semibold px-2 py-1 ${c.isActive ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-600 border border-green-200'}`}>
-                          {c.isActive ? 'Deactivate' : 'Activate'}
-                        </button>
-                        <span className={`badge ${c.isActive ? 'badge-green' : 'badge-gray'}`}>{c.isActive ? 'Active' : 'Inactive'}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {coaches.length === 0 && <div className="bg-white rounded-xl border border-slate-200/80 p-8 text-center text-slate-400 text-sm">No coaches yet.</div>}
+                    );
+                  })}
+                </div>
+              )}
+              {!loadingData && filteredCoaches.length === 0 && (
+                <div className="bg-white rounded-xl border border-slate-200/80 p-10 text-center">
+                  <div className="text-2xl mb-2">🏅</div>
+                  <div className="text-sm text-slate-500 mb-3">{coachSearch ? 'No coaches match your search.' : 'No coaches yet.'}</div>
+                  {!coachSearch && <button onClick={openCreateCoach} className="btn-primary text-xs px-4 py-2">+ Add First Coach</button>}
+                </div>
+              )}
             </div>
           )}
 
           {/* ════════ PROGRAMS ════════ */}
           {tab === 'programs' && (
             <div className="animate-fade-in">
-              <h1 className="font-serif text-xl mb-4">Programs <span className="text-sm font-sans text-slate-400">({programs.length})</span></h1>
-              <div className="bg-white rounded-xl border border-slate-200/80 overflow-auto">
-                <table className="w-full text-xs">
-                  <thead><tr className="border-b border-slate-100 bg-slate-50/50">
-                    <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Program</th>
-                    <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Coach</th>
-                    <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Schedule</th>
-                    <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Capacity</th>
-                    <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Price/Session</th>
-                    <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Revenue Pot.</th>
-                    <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Actions</th>
-                  </tr></thead>
-                  <tbody>
-                    {programs.map((p) => {
-                      const filled = pct(p.spotsTaken, p.spotsTotal);
-                      return (
-                        <tr key={p._id} className="border-b border-slate-50 hover:bg-slate-50/50">
-                          <td className="p-3"><span className="font-semibold">{p.categoryId?.icon} {p.name}</span><br /><span className="text-[9px] text-slate-400">Ages {p.ageRange}</span></td>
-                          <td className="p-3">{p.coachId?.name || '—'}</td>
-                          <td className="p-3 text-[10px]">{p.schedule}<br /><span className="text-slate-400">{p.duration}min · {p.sessions} sessions</span></td>
-                          <td className="p-3">
-                            <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className={`h-full rounded-full ${filled >= 90 ? 'bg-red-500' : filled >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${filled}%` }} /></div>
-                            <span className="text-[9px] text-slate-400">{p.spotsTaken}/{p.spotsTotal} ({filled}%)</span>
-                          </td>
-                          <td className="p-3 font-semibold">{fmt(p.pricePerSession)}</td>
-                          <td className="p-3 font-semibold text-emerald-700">{fmt(p.pricePerSession * p.sessions * p.spotsTotal)}</td>
-                          <td className="p-3">
-                            <div className="flex gap-1 flex-wrap">
-                              <button onClick={() => updateProgramSpots(p._id, p.spotsTotal)} className="btn-outline btn-sm text-[9px]">Spots</button>
-                              <button onClick={() => updateProgramPrice(p._id, p.pricePerSession)} className="btn-outline btn-sm text-[9px]">Price</button>
-                              <button onClick={() => toggleProgramActive(p._id, p.isActive)} className={`btn-sm text-[9px] rounded-lg font-semibold px-2 py-1 ${p.isActive ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-600 border border-green-200'}`}>
-                                {p.isActive ? 'Off' : 'On'}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+                <h1 className="font-serif text-xl">Programs <span className="text-sm font-sans text-slate-400">({programs.length})</span></h1>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    className="input-field text-xs py-1.5 w-28"
+                    value={programCityFilter}
+                    onChange={e => setProgramCityFilter(e.target.value)}>
+                    <option value="all">All Cities</option>
+                    <option value="abuja">🏙️ Abuja</option>
+                    <option value="lagos">🌊 Lagos</option>
+                  </select>
+                  <input
+                    className="input-field text-xs py-1.5 w-40"
+                    placeholder="Search programs..."
+                    value={programSearch}
+                    onChange={e => setProgramSearch(e.target.value)}
+                  />
+                  <button onClick={openCreateProgram} className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5">
+                    <span className="text-sm leading-none">+</span> Add Program
+                  </button>
+                </div>
+              </div>
+
+              {loadingData ? (
+                <p className="text-sm text-slate-400">Loading...</p>
+              ) : (
+                <div className="bg-white rounded-xl border border-slate-200/80 overflow-auto">
+                  <table className="w-full text-xs">
+                    <thead><tr className="border-b border-slate-100 bg-slate-50/50">
+                      <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Program</th>
+                      <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Coach</th>
+                      <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Schedule</th>
+                      <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Capacity</th>
+                      <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Gender</th>
+                      <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Price/Session</th>
+                      <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Revenue Pot.</th>
+                      <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Actions</th>
+                    </tr></thead>
+                    <tbody>
+                      {filteredPrograms.map(p => {
+                        const filled = pct(p.spotsTaken, p.spotsTotal);
+                        return (
+                          <tr key={p._id} className={`border-b border-slate-50 hover:bg-slate-50/50 ${!p.isActive ? 'opacity-60' : ''}`}>
+                            <td className="p-3">
+                              <div className="font-semibold">{p.categoryId?.icon} {p.name}</div>
+                              <div className="text-[9px] text-slate-400">Ages {p.ageRange} · {p.supervision}</div>
+                              {!p.isActive && <span className="badge badge-gray text-[8px] mt-0.5">Inactive</span>}
+                            </td>
+                            <td className="p-3 text-[11px]">{p.coachId?.name || '—'}</td>
+                            <td className="p-3 text-[10px]">
+                              {p.schedule || '—'}
+                              <br /><span className="text-slate-400">{p.duration ? `${p.duration}min` : ''} {p.sessions ? `· ${p.sessions} sessions` : ''}</span>
+                            </td>
+                            <td className="p-3">
+                              <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${filled >= 90 ? 'bg-red-500' : filled >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                                  style={{ width: `${filled}%` }} />
+                              </div>
+                              <span className="text-[9px] text-slate-400">{p.spotsTaken}/{p.spotsTotal} ({filled}%)</span>
+                            </td>
+                            <td className="p-3">
+                              {!p.gender || p.gender === 'any'
+                                ? <span className="text-slate-400 text-[9px]">Any</span>
+                                : <span className={`badge text-[8px] ${p.gender === 'female' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>
+                                    {p.gender === 'female' ? '👧 Girls' : '👦 Boys'}
+                                  </span>
+                              }
+                            </td>
+                            <td className="p-3 font-semibold">{fmt(p.pricePerSession)}</td>
+                            <td className="p-3 font-semibold text-emerald-700">{fmt(p.pricePerSession * (p.sessions || 1) * p.spotsTotal)}</td>
+                            <td className="p-3">
+                              <div className="flex gap-1 flex-wrap">
+                                <button onClick={() => openEditProgram(p)} className="btn-outline btn-sm text-[9px]">Edit ✎</button>
+                                <button onClick={() => toggleProgramActive(p._id, p.isActive)}
+                                  className={`btn-sm text-[9px] rounded-lg font-semibold px-2 py-1 ${p.isActive ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-600 border border-green-200'}`}>
+                                  {p.isActive ? 'Off' : 'On'}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {filteredPrograms.length === 0 && (
+                    <div className="p-10 text-center">
+                      <div className="text-2xl mb-2">📋</div>
+                      <div className="text-sm text-slate-500 mb-3">{programSearch ? 'No programs match your search.' : 'No programs yet.'}</div>
+                      {!programSearch && <button onClick={openCreateProgram} className="btn-primary text-xs px-4 py-2">+ Add First Program</button>}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ════════ TOURNAMENTS ════════ */}
+          {tab === 'tournaments' && (
+            <div className="animate-fade-in">
+              <div className="flex items-center justify-between mb-4">
+                <h1 className="font-serif text-xl">Tournaments <span className="text-sm font-sans text-slate-400">({tournaments.length})</span></h1>
+                <button onClick={() => openModal('createTournament', { status: 'upcoming', isActive: true, entryFee: 0 })} className="btn-primary text-xs px-3 py-2">+ New Tournament</button>
+              </div>
+              <div className="space-y-3">
+                {tournaments.map(t => {
+                  const cat = t.categoryId || {};
+                  const spotsLeft = t.maxTeams ? t.maxTeams - (t.teams?.length || 0) : null;
+                  return (
+                    <div key={t._id} className="bg-white rounded-xl border border-slate-200/80 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            {cat.icon && <span>{cat.icon}</span>}
+                            <div className="font-semibold text-sm">{t.name}</div>
+                          </div>
+                          <div className="text-[10px] text-slate-400 space-y-0.5">
+                            {t.date && <div>📅 {new Date(t.date).toLocaleDateString()}</div>}
+                            {t.venue && <div>📍 {t.venue}</div>}
+                            <div>👥 {t.teams?.length || 0} teams{t.maxTeams ? ` / ${t.maxTeams}` : ''}{spotsLeft !== null && spotsLeft > 0 ? ` · ${spotsLeft} spots left` : ''}</div>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          <span className={`badge ${t.status === 'registration' ? 'badge-green' : t.status === 'in-progress' ? 'bg-red-100 text-red-700' : t.status === 'completed' ? 'badge-blue' : 'badge-amber'}`}>
+                            {t.status}
+                          </span>
+                          {t.entryFee === 0 && <span className="text-[8px] text-teal-600 font-semibold">Free</span>}
+                          {t.entryFee > 0 && <span className="text-[10px] font-semibold">₦{Number(t.entryFee).toLocaleString()}</span>}
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5 mt-3 pt-3 border-t border-slate-50">
+                        <button
+                          onClick={() => openModal('editTournament', {
+                            name: t.name, slug: t.slug || '',
+                            categoryId: t.categoryId?._id || t.categoryId || '',
+                            type: t.type || 'individual',
+                            status: t.status, date: dateStr(t.date),
+                            registrationDeadline: dateStr(t.registrationDeadline),
+                            venue: t.venue || '', city: t.city || 'abuja',
+                            ageRange: t.ageRange || '', maxTeams: t.maxTeams || '',
+                            entryFee: t.entryFee ?? 0, prizes: t.prizes || '',
+                            description: t.description || '', isActive: t.isActive !== false,
+                          }, t._id)}
+                          className="btn-outline btn-sm text-[9px]">Edit</button>
+                        {t.status !== 'completed' && (
+                          <button
+                            onClick={() => openModal('tournamentResults', { results: JSON.stringify(t.results || []) }, t._id)}
+                            className="btn-sm text-[9px] bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-2 py-1 font-semibold">
+                            Update Results
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {tournaments.length === 0 && (
+                  <div className="bg-white rounded-xl border border-slate-200/80 p-10 text-center text-slate-400 text-sm">
+                    No tournaments yet. Create one to get started.
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -567,33 +1806,75 @@ export default function AdminPage() {
             <div className="animate-fade-in">
               <h1 className="font-serif text-xl mb-4">Shop</h1>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
                 {/* Starter Kits */}
                 <div className="bg-white rounded-xl border border-slate-200/80 p-4">
-                  <div className="font-bold text-xs mb-3">🎁 Starter Kits ({kits.length})</div>
-                  {kits.map((k) => (
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="font-bold text-xs">🎁 Starter Kits ({kits.length})</div>
+                    <button onClick={openCreateKit} className="btn-primary text-[10px] px-2.5 py-1">+ Add Kit</button>
+                  </div>
+                  {kits.length === 0 ? (
+                    <div className="py-6 text-center">
+                      <div className="text-slate-400 text-[11px] mb-2">No starter kits yet.</div>
+                      <button onClick={openCreateKit} className="btn-outline text-[10px] px-3 py-1">+ Create First Kit</button>
+                    </div>
+                  ) : kits.map(k => (
                     <div key={k._id} className="flex justify-between py-2 border-b border-slate-50 last:border-0">
-                      <div><div className="text-[11px] font-semibold">{k.icon} {k.name}</div><div className="text-[9px] text-slate-400">{k.brand || ''} · {k.sold || 0} sold</div></div>
-                      <div className="text-right"><div className="text-[11px] font-semibold">{fmt(k.kitPrice)}</div><div className="text-[9px] text-slate-400 line-through">{fmt(k.individualPrice)}</div></div>
+                      <div>
+                        <div className="text-[11px] font-semibold">{k.icon} {k.name}</div>
+                        <div className="text-[9px] text-slate-400">{k.brand || ''} · {k.sold || 0} sold · {k.contents?.length || 0} items</div>
+                        <div className="text-[9px] text-emerald-600 font-semibold">
+                          Save {fmt(k.individualPrice - k.kitPrice)} ({Math.round(((k.individualPrice - k.kitPrice) / k.individualPrice) * 100)}%)
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[11px] font-semibold">{fmt(k.kitPrice)}</div>
+                        <div className="text-[9px] text-slate-400 line-through">{fmt(k.individualPrice)}</div>
+                        <span className={`badge ${k.inStock ? 'badge-green' : 'badge-gray'} text-[8px]`}>{k.inStock ? 'In stock' : 'Out'}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
+
                 {/* Products */}
                 <div className="bg-white rounded-xl border border-slate-200/80 p-4">
-                  <div className="font-bold text-xs mb-3">🛒 Products ({products.length})</div>
-                  {products.map((p) => (
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="font-bold text-xs">🛒 Products ({products.length})</div>
+                    <button onClick={openCreateProduct} className="btn-primary text-[10px] px-2.5 py-1">+ Add Product</button>
+                  </div>
+                  {products.length === 0 ? (
+                    <div className="py-6 text-center">
+                      <div className="text-slate-400 text-[11px] mb-2">No products yet.</div>
+                      <button onClick={openCreateProduct} className="btn-outline text-[10px] px-3 py-1">+ Create First Product</button>
+                    </div>
+                  ) : products.map(p => (
                     <div key={p._id} className="flex justify-between py-2 border-b border-slate-50 last:border-0">
-                      <div><div className="text-[11px] font-semibold">{p.categoryId?.icon} {p.name}</div><div className="text-[9px] text-slate-400">{p.brand || ''} · {p.sold || 0} sold</div></div>
-                      <span className="text-[11px] font-semibold">{fmt(p.price)}</span>
+                      <div>
+                        <div className="text-[11px] font-semibold">{p.categoryId?.icon} {p.name}</div>
+                        <div className="text-[9px] text-slate-400">{p.brand || ''} · {p.sold || 0} sold</div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[11px] font-semibold">{fmt(p.price)}</span>
+                        <br />
+                        <span className={`badge ${p.inStock ? 'badge-green' : 'badge-gray'} text-[8px]`}>{p.inStock ? 'In stock' : 'Out'}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
+
                 {/* Orders */}
                 <div className="bg-white rounded-xl border border-slate-200/80 p-4">
                   <div className="font-bold text-xs mb-3">📦 Recent Orders ({orders.length})</div>
-                  {orders.length > 0 ? orders.slice(0, 10).map((o) => (
+                  {orders.length > 0 ? orders.slice(0, 10).map(o => (
                     <div key={o._id} className="flex justify-between py-2 border-b border-slate-50 last:border-0">
-                      <div><div className="text-[11px] font-semibold">{o.items?.length} items</div><div className="text-[9px] text-slate-400">{ago(o.createdAt)}</div></div>
-                      <div className="text-right"><div className="text-[11px] font-semibold">{fmt(o.total)}</div><span className={`badge ${o.status === 'delivered' ? 'badge-green' : 'badge-amber'}`}>{o.status || 'pending'}</span></div>
+                      <div>
+                        <div className="text-[11px] font-semibold">{o.items?.length} item{o.items?.length !== 1 ? 's' : ''}</div>
+                        <div className="text-[9px] text-slate-400">{ago(o.createdAt)}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[11px] font-semibold">{fmt(o.total)}</div>
+                        <span className={`badge ${o.status === 'delivered' ? 'badge-green' : 'badge-amber'}`}>{o.status || 'pending'}</span>
+                      </div>
                     </div>
                   )) : <p className="text-[11px] text-slate-400 text-center py-4">No orders yet.</p>}
                 </div>
@@ -605,14 +1886,13 @@ export default function AdminPage() {
           {tab === 'revenue' && (
             <div className="animate-fade-in">
               <h1 className="font-serif text-xl mb-4">Revenue</h1>
-              {/* Summary cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
                 {[
                   { l: 'Gross Revenue', v: fmt(rev.total || ov.totalRevenue || 0), color: 'text-emerald-700' },
                   { l: 'VAT Collected', v: fmt(rev.tax || ov.totalTax || 0) },
                   { l: 'Transactions', v: rev.payments || payments.length },
                   { l: 'Conversion', v: `${ov.conversionRate || 0}%`, sub: 'enquiry → enrolled' },
-                ].map((s) => (
+                ].map(s => (
                   <div key={s.l} className="bg-white rounded-xl border border-slate-200/80 p-4">
                     <div className="text-[9px] uppercase font-bold text-slate-400">{s.l}</div>
                     <div className={`font-serif text-xl mt-1 ${s.color || ''}`}>{s.v}</div>
@@ -620,7 +1900,6 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
-              {/* Payment history */}
               <div className="bg-white rounded-xl border border-slate-200/80 p-4">
                 <div className="font-bold text-xs mb-3">Transaction History</div>
                 <div className="overflow-auto">
@@ -634,9 +1913,9 @@ export default function AdminPage() {
                       <th className="text-left p-2 text-[9px] uppercase font-bold text-slate-400">Date</th>
                     </tr></thead>
                     <tbody>
-                      {payments.slice(0, 25).map((p) => (
+                      {payments.slice(0, 50).map(p => (
                         <tr key={p._id} className="border-b border-slate-50">
-                          <td className="p-2 text-[10px] font-mono text-slate-400">{p.reference?.slice(0, 15)}...</td>
+                          <td className="p-2 text-[10px] font-mono text-slate-400">{p.reference?.slice(0, 15)}…</td>
                           <td className="p-2">{p.description}</td>
                           <td className="p-2 font-semibold">{fmt(p.totalAmount)}</td>
                           <td className="p-2 text-slate-400">{p.channel || '—'}</td>
@@ -671,7 +1950,7 @@ export default function AdminPage() {
                   <div className="space-y-2 text-[11px]">
                     <div className="flex justify-between py-1.5 border-b border-slate-50"><span className="text-slate-500">MongoDB</span><span className="badge badge-green">Connected</span></div>
                     <div className="flex justify-between py-1.5 border-b border-slate-50"><span className="text-slate-500">Firebase Auth</span><span className="badge badge-green">Active</span></div>
-                    <div className="flex justify-between py-1.5 border-b border-slate-50"><span className="text-slate-500">Paystack</span><span className="badge badge-green">Test Mode</span></div>
+                    <div className="flex justify-between py-1.5 border-b border-slate-50"><span className="text-slate-500">Paystack</span><span className="badge badge-green">Configured</span></div>
                     <div className="flex justify-between py-1.5 border-b border-slate-50"><span className="text-slate-500">WhatsApp</span><span className={`badge ${process.env.NEXT_PUBLIC_WA_BUSINESS ? 'badge-green' : 'badge-amber'}`}>{process.env.NEXT_PUBLIC_WA_BUSINESS ? 'Configured' : 'Not Set'}</span></div>
                     <div className="flex justify-between py-1.5"><span className="text-slate-500">Sanity Blog</span><span className={`badge ${process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ? 'badge-green' : 'badge-amber'}`}>{process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ? 'Connected' : 'Not Set'}</span></div>
                   </div>
@@ -686,9 +1965,9 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="bg-white rounded-xl border border-slate-200/80 p-5">
-                  <div className="font-bold text-xs mb-3">🏷️ Category Sponsors</div>
+                  <div className="font-bold text-xs mb-3">🏷️ Categories & Sponsors</div>
                   <div className="space-y-2 text-[11px]">
-                    {stats?.categories?.map((c) => (
+                    {stats?.categories?.map(c => (
                       <div key={c._id} className="flex justify-between py-1.5 border-b border-slate-50 last:border-0">
                         <span>{c.icon} {c.name}</span>
                         <span className="text-slate-400">{c.sponsor?.name || 'No sponsor'} · {c.programCount || 0} programs</span>
@@ -699,6 +1978,7 @@ export default function AdminPage() {
               </div>
             </div>
           )}
+
         </div>
       </main>
     </div>

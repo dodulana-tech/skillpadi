@@ -35,6 +35,7 @@ export default function Navbar() {
         <div className="hidden md:flex items-center gap-5 text-xs font-medium text-slate-500">
           <Link href="/#programs" className="hover:text-slate-900 transition-colors">Programs</Link>
           <Link href="/#coaches" className="hover:text-slate-900 transition-colors">Coaches</Link>
+          <Link href="/leaderboard" className="hover:text-slate-900 transition-colors">Leaderboard</Link>
           <Link href="/shop" className="hover:text-slate-900 transition-colors">Shop</Link>
           <Link href="/blog" className="hover:text-slate-900 transition-colors">Blog</Link>
           <Link href="/#how" className="hover:text-slate-900 transition-colors">How It Works</Link>
@@ -89,6 +90,7 @@ export default function Navbar() {
         <div className="md:hidden bg-white border-t border-slate-100 px-4 py-3 space-y-2 shadow-lg">
           <Link href="/#programs" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">Programs</Link>
           <Link href="/#coaches" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">Coaches</Link>
+          <Link href="/leaderboard" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">🏆 Leaderboard</Link>
           <Link href="/shop" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">Shop</Link>
           <Link href="/blog" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">Blog</Link>
           <Link href="/#how" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">How It Works</Link>

@@ -18,6 +18,7 @@ const CategorySchema = new mongoose.Schema({
   name: String, slug: String, icon: String, color: String,
   description: String, active: { type: Boolean, default: true },
   order: Number, sponsor: { name: String, tagline: String, logo: String },
+  city: { type: String, default: 'abuja' },
 }, { timestamps: true });
 
 const VettingItemSchema = new mongoose.Schema({
@@ -27,7 +28,7 @@ const VettingItemSchema = new mongoose.Schema({
 const CoachSchema = new mongoose.Schema({
   name: String, slug: String, initials: String, title: String, bio: String,
   categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
-  whatsapp: String,
+  whatsapp: String, city: { type: String, default: 'abuja' },
   vetting: {
     nin: VettingItemSchema, police: VettingItemSchema, address: VettingItemSchema,
     photoMatch: VettingItemSchema, coachingCert: VettingItemSchema, experience: VettingItemSchema,
@@ -54,6 +55,8 @@ const ProgramSchema = new mongoose.Schema({
   spotsTotal: Number, spotsTaken: Number,
   milestones: [String], highlights: [String],
   whatToBring: [String], safetyNote: String,
+  gender: { type: String, default: 'any' },
+  city: { type: String, default: 'abuja' },
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
@@ -78,12 +81,32 @@ const SchoolSchema = new mongoose.Schema({
   marginPercent: Number, isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
+const AchievementSchema = new mongoose.Schema({
+  code: { type: String, unique: true }, name: String, description: String, icon: String,
+  categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', default: null },
+  type: String, requirement: { type: String, value: Number },
+  points: { type: Number, default: 10 },
+  rarity: { type: String, default: 'common' },
+  isActive: { type: Boolean, default: true },
+}, { timestamps: true });
+
+const TournamentSchema = new mongoose.Schema({
+  name: String, slug: { type: String, unique: true }, categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
+  type: String, description: String, venue: String, area: String, city: { type: String, default: 'abuja' },
+  date: Date, registrationDeadline: Date, maxTeams: Number, maxPerTeam: Number,
+  entryFee: { type: Number, default: 0 }, teams: [], results: [],
+  status: { type: String, default: 'upcoming' }, sponsoredBy: { name: String, logo: String },
+  isActive: { type: Boolean, default: true },
+}, { timestamps: true });
+
 const Category = mongoose.model('Category', CategorySchema);
 const Coach = mongoose.model('Coach', CoachSchema);
 const Program = mongoose.model('Program', ProgramSchema);
 const Product = mongoose.model('Product', ProductSchema);
 const StarterKit = mongoose.model('StarterKit', StarterKitSchema);
 const School = mongoose.model('School', SchoolSchema);
+const Achievement = mongoose.model('Achievement', AchievementSchema);
+const Tournament = mongoose.model('Tournament', TournamentSchema);
 
 // ── Vetting helper ──
 const v = (status = 'verified', note = '', date = '2025-01-10', expires = null) => ({
@@ -98,6 +121,7 @@ async function seed() {
   await Promise.all([
     Category.deleteMany(), Coach.deleteMany(), Program.deleteMany(),
     Product.deleteMany(), StarterKit.deleteMany(), School.deleteMany(),
+    Achievement.deleteMany(), Tournament.deleteMany(),
   ]);
   console.log('🗑️  Cleared existing data');
 
@@ -143,7 +167,7 @@ async function seed() {
     { name: 'Little Swimmers', slug: 'little-swimmers', categoryId: cm.swimming, coachId: chm['coach-amaka'], ageRange: '3-5', ageMin: 3, ageMax: 5, location: 'Transcorp Hilton Pool, Maitama', locationNote: 'Leisure centre entrance, left side.', schedule: 'Mon & Wed, 9:00 AM', duration: 45, sessions: 4, groupSize: '1-on-1', pricePerSession: 25000, supervision: 'parent-present', spotsTotal: 6, spotsTaken: 4, milestones: ['Water Comfort', 'Floating Basics', 'Kicking Technique', 'First Unassisted Float'], highlights: ['Water confidence', 'Floating & kicking', 'Safety awareness'], whatToBring: ['Swimsuit & cap', 'Towel', 'Water bottle', 'Goggles (optional)'], safetyNote: '1.2m max. Lifeguard on duty. 1:1 ratio.' },
     { name: 'Junior Swimmers', slug: 'junior-swimmers', categoryId: cm.swimming, coachId: chm['coach-emeka'], ageRange: '6-10', ageMin: 6, ageMax: 10, location: 'Sheraton Hotel Pool, Wuse', locationNote: 'Main lobby → health club.', schedule: 'Tue & Thu, 3:30 PM', duration: 60, sessions: 8, groupSize: '4-6 kids', pricePerSession: 23000, supervision: 'drop-off', spotsTotal: 6, spotsTaken: 6, milestones: ['Freestyle 25m', 'Backstroke Intro', 'Treading 60s', 'Diving Basics', 'Endurance 50m', 'Stroke Correction', 'Speed Drills', 'Assessment'], highlights: ['Freestyle & backstroke', 'Diving', 'Endurance'], whatToBring: ['Swimsuit, cap & goggles', 'Towel', 'Water bottle'], safetyNote: 'Sign in/out. WhatsApp session alerts.' },
     { name: 'Weekend Football Skills', slug: 'weekend-football', categoryId: cm.football, coachId: chm['coach-bayo'], ageRange: '5-8', ageMin: 5, ageMax: 8, location: 'Jabi Lake Turf', locationNote: 'Behind Jabi Lake Mall.', schedule: 'Sat, 8:00 AM', duration: 90, sessions: 8, groupSize: '10-14 kids', pricePerSession: 10000, supervision: 'drop-off', spotsTotal: 14, spotsTaken: 9, milestones: ['Ball Control', 'Passing', 'Dribbling', 'Shooting', 'Positioning', 'Small-Sided Game', 'Teamwork', 'Mini Tournament'], whatToBring: ['Football boots', 'Shin guards', 'Water bottle'], safetyNote: 'Artificial turf. First aid on site.' },
-    { name: 'Girls Football Academy', slug: 'girls-football', categoryId: cm.football, coachId: chm['coach-ngozi'], ageRange: '6-12', ageMin: 6, ageMax: 12, location: 'Jabi Lake Turf', schedule: 'Sat, 10:00 AM', duration: 90, sessions: 8, groupSize: '8-12 kids', pricePerSession: 10000, supervision: 'drop-off', spotsTotal: 12, spotsTaken: 5, milestones: ['Ball Control', 'Passing', 'Dribbling', 'Shooting', '1v1 Defending', 'Game Intelligence', 'Set Pieces', 'Showcase Match'], whatToBring: ['Boots', 'Shin guards', 'Water bottle'], safetyNote: 'Female coaching staff. Safe environment.' },
+    { name: 'Girls Football Academy', slug: 'girls-football', categoryId: cm.football, coachId: chm['coach-ngozi'], ageRange: '6-12', ageMin: 6, ageMax: 12, location: 'Jabi Lake Turf', schedule: 'Sat, 10:00 AM', duration: 90, sessions: 8, groupSize: '8-12 kids', pricePerSession: 10000, supervision: 'drop-off', spotsTotal: 12, spotsTaken: 5, gender: 'female', milestones: ['Ball Control', 'Passing', 'Dribbling', 'Shooting', '1v1 Defending', 'Game Intelligence', 'Set Pieces', 'Showcase Match'], whatToBring: ['Boots', 'Shin guards', 'Water bottle'], safetyNote: 'Female coaching staff. Safe environment.' },
     { name: 'Little Warriors', slug: 'little-warriors', categoryId: cm.taekwondo, coachId: chm['master-chukwu'], ageRange: '5-8', ageMin: 5, ageMax: 8, location: 'Sports Complex, Garki', schedule: 'Sat & Sun, 10:00 AM', duration: 60, sessions: 12, groupSize: '6-10 kids', pricePerSession: 15000, supervision: 'drop-off', spotsTotal: 10, spotsTaken: 7, milestones: ['White Belt Basics', 'Stance & Balance', 'Basic Kicks', 'Basic Blocks', 'Form 1', 'Yellow Belt Prep', 'Sparring Intro', 'Discipline', 'Form 2', 'Speed Drills', 'Yellow Belt Test', 'Graduation'], whatToBring: ['Dobok', 'Water bottle', 'Towel'], safetyNote: 'Padded area. No contact sparring for beginners.' },
     { name: 'Piano Explorers', slug: 'piano-explorers', categoryId: cm.piano, coachId: chm['mrs-folake'], ageRange: '5-9', ageMin: 5, ageMax: 9, location: 'Music Hub, Garki Area 11', locationNote: 'Off Nile St, opposite First Bank.', schedule: 'Fri, 4:00 PM', duration: 30, sessions: 4, groupSize: '1-on-1', pricePerSession: 20000, supervision: 'nanny-driver', spotsTotal: 3, spotsTaken: 1, milestones: ['Note Reading', 'Simple Melodies', 'Two-Hand Coordination', 'First Recital Piece'], whatToBring: ['Nothing — keyboards provided'], safetyNote: 'Indoor AC studio. Parents/nannies in reception.' },
     { name: 'Code Explorers (Scratch)', slug: 'code-explorers', categoryId: cm.coding, coachId: chm['mr-tunde'], ageRange: '6-9', ageMin: 6, ageMax: 9, location: 'STEM Hub, Wuse 2', schedule: 'Sat, 11:00 AM', duration: 90, sessions: 8, groupSize: '4-6 kids', pricePerSession: 18000, supervision: 'drop-off', spotsTotal: 6, spotsTaken: 3, milestones: ['What is Code?', 'First Scratch Project', 'Loops', 'Events', 'Variables', 'First Game', 'Debugging', 'Showcase'], whatToBring: ['Nothing — laptops provided'], safetyNote: 'Indoor AC lab. Supervised. No unsupervised internet.' },
@@ -187,6 +211,72 @@ async function seed() {
     { name: 'Premiere Academy', slug: 'premiere', contactName: 'Mr. Obaseki', contactRole: 'Sports Director', email: 'sports@premiere.edu.ng', phone: '08123334444', area: 'Lugbe', marginPercent: 12 },
   ]);
   console.log(`📦 ${schools.length} schools`);
+
+  // ── Achievements ──
+  const achievements = await Achievement.insertMany([
+    { code: 'WATER_CONFIDENT', name: 'Water Confident', description: 'Comfortable in the water after first session.', icon: '🌊', categoryId: cm.swimming, type: 'milestone', requirement: { type: 'sessions_completed', value: 1 }, points: 10, rarity: 'common' },
+    { code: 'FIRST_FLOAT', name: 'First Float', description: 'Successfully floated unaided!', icon: '🏊', categoryId: cm.swimming, type: 'milestone', requirement: { type: 'sessions_completed', value: 2 }, points: 15, rarity: 'common' },
+    { code: 'FIRST_LAP', name: 'First Freestyle Lap', description: 'Swam a full freestyle lap without stopping.', icon: '🏅', categoryId: cm.swimming, type: 'milestone', requirement: { type: 'sessions_completed', value: 4 }, points: 50, rarity: 'rare' },
+    { code: 'BALL_CONTROL', name: 'Ball Master', description: 'Mastered basic ball control skills.', icon: '⚽', categoryId: cm.football, type: 'milestone', requirement: { type: 'sessions_completed', value: 3 }, points: 20, rarity: 'common' },
+    { code: 'FIRST_GOAL', name: 'First Goal', description: 'Scored their first real goal!', icon: '🥅', categoryId: cm.football, type: 'milestone', requirement: { type: 'sessions_completed', value: 4 }, points: 50, rarity: 'rare' },
+    { code: 'WHITE_BELT', name: 'White Belt', description: 'Earned their white belt in Taekwondo.', icon: '🥋', categoryId: cm.taekwondo, type: 'milestone', requirement: { type: 'sessions_completed', value: 1 }, points: 10, rarity: 'common' },
+    { code: 'YELLOW_BELT', name: 'Yellow Belt', description: 'Passed the yellow belt test. Discipline pays off!', icon: '🟡', categoryId: cm.taekwondo, type: 'milestone', requirement: { type: 'sessions_completed', value: 12 }, points: 100, rarity: 'rare' },
+    { code: 'FIRST_PIECE', name: 'First Recital Piece', description: 'Played their first complete piano piece.', icon: '🎵', categoryId: cm.piano, type: 'milestone', requirement: { type: 'sessions_completed', value: 4 }, points: 50, rarity: 'rare' },
+    { code: 'FIRST_CODE', name: 'First Program', description: 'Built their first Scratch project.', icon: '💻', categoryId: cm.coding, type: 'milestone', requirement: { type: 'sessions_completed', value: 3 }, points: 20, rarity: 'common' },
+    { code: 'FIRST_SERVE', name: 'First Serve', description: 'Hit their first real tennis serve.', icon: '🎾', categoryId: cm.tennis, type: 'milestone', requirement: { type: 'sessions_completed', value: 3 }, points: 20, rarity: 'common' },
+    { code: 'STREAK_5', name: '5 Session Streak', description: 'Attended 5 sessions in a row. Keep it up!', icon: '🔥', categoryId: null, type: 'streak', requirement: { type: 'streak_sessions', value: 5 }, points: 30, rarity: 'common' },
+    { code: 'STREAK_10', name: 'Unstoppable', description: '10 consecutive sessions. Pure dedication!', icon: '💪', categoryId: null, type: 'streak', requirement: { type: 'streak_sessions', value: 10 }, points: 75, rarity: 'rare' },
+    { code: 'STREAK_20', name: 'Iron Will', description: '20 sessions without missing a beat. Legendary.', icon: '⭐', categoryId: null, type: 'streak', requirement: { type: 'streak_sessions', value: 20 }, points: 150, rarity: 'epic' },
+    { code: 'MULTI_SPORT_2', name: 'Renaissance Kid', description: 'Active in 2 different sports. Well-rounded!', icon: '🌟', categoryId: null, type: 'badge', requirement: { type: 'sports_count', value: 2 }, points: 60, rarity: 'rare' },
+    { code: 'MULTI_SPORT_3', name: 'Triple Threat', description: 'Active in 3 different sports. Extraordinary!', icon: '👑', categoryId: null, type: 'badge', requirement: { type: 'sports_count', value: 3 }, points: 120, rarity: 'epic' },
+    { code: 'TOURNAMENT_WIN', name: 'Champion', description: 'Won a SkillPadi tournament. This is it!', icon: '🏆', categoryId: null, type: 'tournament', requirement: { type: 'tournament_win', value: 1 }, points: 200, rarity: 'legendary' },
+    { code: 'PERFECT_TERM', name: 'Perfect Attendance', description: 'Completed every single session in a term.', icon: '✨', categoryId: null, type: 'badge', requirement: { type: 'perfect_term', value: 1 }, points: 100, rarity: 'epic' },
+  ]);
+  console.log(`📦 ${achievements.length} achievements`);
+
+  // ── Tournament ──
+  const tournamentDate = new Date();
+  tournamentDate.setMonth(tournamentDate.getMonth() + 2);
+  const regDeadline = new Date();
+  regDeadline.setMonth(regDeadline.getMonth() + 1);
+
+  const tournaments = await Tournament.insertMany([
+    {
+      name: 'SkillPadi Swimming Relay — Term 1 2026',
+      slug: 'swimming-relay-term1-2026',
+      categoryId: cm.swimming,
+      type: 'inter-school',
+      description: 'The first SkillPadi inter-school swimming relay! Teams of 4 compete in freestyle relay. All skill levels welcome. Trophy, medals, and certificates for top 3 teams.',
+      venue: 'Transcorp Hilton Pool, Maitama',
+      area: 'Maitama',
+      city: 'abuja',
+      date: tournamentDate,
+      registrationDeadline: regDeadline,
+      maxTeams: 8,
+      maxPerTeam: 4,
+      entryFee: 10000,
+      status: 'registration',
+      sponsoredBy: { name: 'Speedo', logo: '' },
+      isActive: true,
+    },
+  ]);
+  console.log(`📦 ${tournaments.length} tournaments`);
+
+  // ── Lagos placeholder ──
+  // Add Chess as a Lagos category with placeholder coaches
+  const lagosChessCat = (await Category.insertMany([
+    { name: 'Chess', slug: 'chess', icon: '♟️', color: '#1E293B', description: 'Strategic thinking & cognitive skills with grandmaster-level coaches', order: 7, city: 'lagos', active: true },
+  ]))[0];
+
+  await Coach.insertMany([
+    { name: 'Coach Tunde Onakoya', slug: 'coach-tunde-chess', initials: 'TO', title: 'Chess Coach — Lagos', bio: 'World-record holder. Bringing chess to every Nigerian child.', categoryId: lagosChessCat._id, whatsapp: '2349000000001', shieldLevel: 'in-progress', rating: 5.0, reviewCount: 0, yearsExperience: 10, ageGroups: '5-16', languages: ['English', 'Yoruba'], venues: ['Lekki Phase 1'], city: 'lagos', isActive: false, featuredOrder: 10 },
+    { name: 'Coach Ada Okafor', slug: 'coach-ada-lagos', initials: 'AO', title: 'Swimming Coach — Lagos', bio: 'Former Nigerian national swimmer. Bringing world-class aquatics to Ikoyi.', categoryId: cm.swimming, whatsapp: '2349000000002', shieldLevel: 'in-progress', rating: 0, reviewCount: 0, yearsExperience: 7, ageGroups: '4-16', languages: ['English', 'Igbo'], venues: ['Eko Hotels Pool, Victoria Island'], city: 'lagos', isActive: false, featuredOrder: 11 },
+  ]);
+
+  await Program.insertMany([
+    { name: 'Chess Masterclass with Tunde Onakoya', slug: 'chess-masterclass-lagos', categoryId: lagosChessCat._id, coachId: (await Coach.findOne({ slug: 'coach-tunde-chess' }))._id, ageRange: '7-16', ageMin: 7, ageMax: 16, location: 'Lekki Phase 1, Lagos', schedule: 'TBD', duration: 90, sessions: 4, groupSize: '4-8 kids', pricePerSession: 25000, supervision: 'drop-off', spotsTotal: 50, spotsTaken: 0, city: 'lagos', isActive: false },
+  ]);
+  console.log('📦 Lagos placeholder data added');
 
   console.log('\n🎉 Seed complete! SkillPadi database ready.');
   await mongoose.disconnect();

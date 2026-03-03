@@ -136,7 +136,7 @@ export function CoachProfileClient({ coach, programs }) {
                 </div>
                 <div className="text-[10px] px-2 py-1 rounded bg-amber-50 text-amber-800 mb-2">{sup.label}: {sup.desc}</div>
                 <div className="flex gap-1.5">
-                  <a href={waLink(coach.whatsapp || process.env.NEXT_PUBLIC_WA_BUSINESS || '', `Hi! Interested in "${prog.name}".`)} target="_blank" rel="noopener noreferrer" className="btn-whatsapp btn-sm">💬 WhatsApp</a>
+                  <a href={waLink(process.env.NEXT_PUBLIC_WA_BUSINESS || '', `Hi! I'm interested in "${prog.name}" with ${coach.name}.`)} target="_blank" rel="noopener noreferrer" className="btn-whatsapp btn-sm">💬 WhatsApp Us</a>
                   <Link href={`/programs/${prog.slug || prog._id}`} className="btn-outline btn-sm">Full Details</Link>
                 </div>
               </div>

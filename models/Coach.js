@@ -76,6 +76,7 @@ const CoachSchema = new mongoose.Schema({
 
   isActive: { type: Boolean, default: true },
   featuredOrder: { type: Number, default: 0 }, // for homepage ordering
+  city: { type: String, enum: ['abuja', 'lagos'], default: 'abuja' },
 
   // Referral & Trust Network
   referredByCoachId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coach' }, // who referred this coach

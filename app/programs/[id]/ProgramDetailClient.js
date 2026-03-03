@@ -73,6 +73,21 @@ export function ProgramDetailClient({ program }) {
         </div>
       </div>
 
+      {/* Gender restriction badge */}
+      {program.gender && program.gender !== 'any' && (
+        <div className="card p-3 mb-3 animate-fade-in bg-pink-50 border-pink-200/60 flex items-center gap-2">
+          <span className="text-lg">{program.gender === 'female' ? '👧' : '👦'}</span>
+          <div>
+            <div className="font-bold text-xs text-pink-800">
+              {program.gender === 'female' ? 'Girls Only Program' : 'Boys Only Program'}
+            </div>
+            <p className="text-[10px] text-pink-600">
+              This program is exclusively for {program.gender === 'female' ? 'girls' : 'boys'}.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Supervision */}
       <div className="card p-4 mb-3 animate-fade-in" style={{ background: '#FFFBEB' }}>
         <div className="font-bold text-xs mb-1">{sup.icon} Supervision: {sup.label}</div>

@@ -12,22 +12,20 @@ export const GET = handler(async (request) => {
   const auth = await authenticate(request);
   if (isAuthError(auth)) return auth;
 
-  const { searchParams } = new URL(request.url);
-  const reference = searchParams.get('reference');
+  const url = new URL(request.url);
+  const reference = url.searchParams.get('reference');
   if (!reference) return error('Reference required', 400);
 
   await dbConnect();
 
   const ref = String(reference);
-  const filter = { reference: ref };
-  const payment = await Payment.findOne(filter).lean();
+  const payment = await Payment.findOne({ reference: ref }).lean();
   if (!payment) return error('Payment not found', 404);
   if (payment.status === 'success') return success({ status: 'already_processed' });
 
-  // Verify with Paystack
   let verification;
   try {
-    verification = await verifyPayment(reference);
+    verification = await verifyPayment(ref);
   } catch (err) {
     return error('Could not verify payment', 502);
   }
@@ -36,60 +34,49 @@ export const GET = handler(async (request) => {
     return success({ status: verification.status });
   }
 
-  // Update payment
-  await Payment.findByIdAndUpdate(payment._id, {
+  await Payment.updateOne({ _id: payment._id }, {
     status: 'success',
     paystackRef: String(verification.id || ''),
     channel: verification.channel,
     paidAt: verification.paid_at ? new Date(verification.paid_at) : new Date(),
   });
 
-  // Process checkout items
   const checkout = payment.webhookData?.checkoutItems;
   if (Array.isArray(checkout)) {
     for (const item of checkout) {
       if (item.type === 'membership') {
-        await User.findByIdAndUpdate(payment.userId, {
+        await User.updateOne({ _id: payment.userId }, {
           membershipPaid: true,
           membershipDate: new Date(),
-          membershipRef: reference,
+          membershipRef: ref,
         });
       }
       if (item.type === 'enrollment' && payment.webhookData?.programId) {
-        const existing = await Enrollment.findOne({
-          userId: payment.userId,
-          programId: payment.webhookData.programId,
-          childName: payment.webhookData.childName,
-          status: { $in: ['pending', 'active'] },
-        });
-        if (!existing) {
-          const program = await Program.findOneAndUpdate(
-            { _id: payment.webhookData.programId, $expr: { $lt: ['$spotsTaken', '$spotsTotal'] } },
+        const existingEnr = await Enrollment.find({ userId: payment.userId, programId: payment.webhookData.programId, status: 'active' }).lean();
+        if (existingEnr.length === 0) {
+          await Program.updateOne(
+            { _id: payment.webhookData.programId, spotsTaken: { $lt: 100 } },
             { $inc: { spotsTaken: 1 } },
-            { new: true },
           );
-          if (program) {
-            await Enrollment.create({
-              userId: payment.userId,
-              childName: payment.webhookData.childName || 'Child',
-              childAge: payment.webhookData.childAge,
-              programId: payment.webhookData.programId,
-              status: 'active',
-              paymentId: payment._id,
-              startDate: new Date(),
-            });
-          }
+          await Enrollment.create({
+            userId: payment.userId,
+            childName: payment.webhookData.childName || 'Child',
+            childAge: payment.webhookData.childAge,
+            programId: payment.webhookData.programId,
+            status: 'active',
+            paymentId: payment._id,
+            startDate: new Date(),
+          });
         }
       }
     }
   }
 
-  // Handle simple membership/enrollment payments (non-checkout)
   if (payment.type === 'membership' && !checkout) {
-    await User.findByIdAndUpdate(payment.userId, {
+    await User.updateOne({ _id: payment.userId }, {
       membershipPaid: true,
       membershipDate: new Date(),
-      membershipRef: reference,
+      membershipRef: ref,
     });
   }
 

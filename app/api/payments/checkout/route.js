@@ -62,6 +62,30 @@ export const POST = handler(async (request) => {
     if (program.spotsTaken >= program.spotsTotal) {
       return error('Program is full — join the waitlist via WhatsApp', 400);
     }
+
+    // Age validation
+    if (body.childAge) {
+      const age = Number(body.childAge);
+      if (program.ageMin && age < program.ageMin) {
+        return error(`Child age (${age}) is below the minimum age (${program.ageMin}) for this program`, 400);
+      }
+      if (program.ageMax && age > program.ageMax) {
+        return error(`Child age (${age}) is above the maximum age (${program.ageMax}) for this program`, 400);
+      }
+    }
+
+    // Duplicate enrollment check
+    if (body.childName) {
+      const existing = await Enrollment.findOne({
+        userId: auth.dbUser._id,
+        programId: body.programId,
+        childName: body.childName,
+        status: { $in: ['pending', 'active'] },
+      }).lean();
+      if (existing) {
+        return error('This child is already enrolled in this program', 409);
+      }
+    }
   }
 
   // Create payment record
