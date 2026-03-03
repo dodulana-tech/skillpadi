@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, createContext, useContext } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 
@@ -29,6 +29,8 @@ const TABS = [
   { id: 'members', label: 'Members', icon: '👨‍👩‍👧' },
   { id: 'coaches', label: 'Coaches', icon: '🏅' },
   { id: 'programs', label: 'Programs', icon: '📋' },
+  { id: 'schools', label: 'Schools', icon: '🏫' },
+  { id: 'communities', label: 'Estates', icon: '🏘️' },
   { id: 'tournaments', label: 'Tournaments', icon: '🏆' },
   { id: 'shop', label: 'Shop', icon: '🛍️' },
   { id: 'revenue', label: 'Revenue', icon: '💳' },
@@ -61,6 +63,62 @@ const TIER_COLORS = {
   4: { pill: 'bg-teal-50 text-teal-700', label: 'Ongoing Trust' },
 };
 
+// ── Modal context (stable refs for modal primitives) ─────────────
+const ModalCtx = createContext({ onClose: () => {}, submitting: false });
+
+const Overlay = ({ children }) => {
+  const { onClose } = useContext(ModalCtx);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 pt-8 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl" onClick={e => e.stopPropagation()}>
+        {children}
+      </div>
+    </div>
+  );
+};
+
+const ModalHeader = ({ title }) => {
+  const { onClose } = useContext(ModalCtx);
+  return (
+    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+      <h2 className="font-serif text-base font-bold text-slate-900">{title}</h2>
+      <button onClick={onClose} className="w-7 h-7 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
+    </div>
+  );
+};
+
+const ModalFooter = ({ onSubmit, submitLabel = 'Save' }) => {
+  const { onClose, submitting } = useContext(ModalCtx);
+  return (
+    <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl">
+      <button onClick={onClose} className="btn-outline text-xs px-4 py-2">Cancel</button>
+      <button onClick={onSubmit} disabled={submitting}
+        className="btn-primary text-xs px-5 py-2 disabled:opacity-60 disabled:cursor-not-allowed">
+        {submitting ? 'Saving...' : submitLabel}
+      </button>
+    </div>
+  );
+};
+
+const ModalBody = ({ children }) => (
+  <div className="px-5 py-4 space-y-4 max-h-[65vh] overflow-y-auto">{children}</div>
+);
+
+const SectionHead = ({ title }) => (
+  <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider pt-1 pb-1.5 border-b border-slate-100">{title}</div>
+);
+
+const Row = ({ children }) => <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{children}</div>;
+
+const FL = ({ label, req, children }) => (
+  <div>
+    <label className="block text-[10px] font-semibold text-slate-600 mb-1">
+      {label}{req && <span className="text-red-400 ml-0.5">*</span>}
+    </label>
+    {children}
+  </div>
+);
+
 // ═══════════════════════════════════════════════════════════════════
 export default function AdminPage() {
   const { isAuthenticated, isAdmin, loading, authFetch, dbUser } = useAuth();
@@ -80,6 +138,14 @@ export default function AdminPage() {
   const [orders, setOrders] = useState([]);
   const [categories, setCategories] = useState([]);
   const [tournaments, setTournaments] = useState([]);
+  const [schools, setSchools] = useState([]);
+  const [schoolTab, setSchoolTab] = useState('pending');
+  const [approvingSchool, setApprovingSchool] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [communities, setCommunities] = useState([]);
+  const [communityTab, setCommunityTab] = useState('pending');
+  const [approvingCommunity, setApprovingCommunity] = useState(null);
+  const [communityRejectReason, setCommunityRejectReason] = useState('');
   const [loadingData, setLoadingData] = useState(true);
 
   // ── UI ──
@@ -101,6 +167,14 @@ export default function AdminPage() {
   const [awardAchId, setAwardAchId] = useState('');
   const [awarding, setAwarding] = useState(false);
 
+  // ── Session popover ──
+  const [sessionPop, setSessionPop] = useState(null); // { enrId, childName, msg, note, milestones, sessionsCompleted, total, programName }
+  const [sessionPopping, setSessionPopping] = useState(false);
+
+  // ── Bulk enrollment selection ──
+  const [checkedEnrs, setCheckedEnrs] = useState(new Set());
+  const [markingAll, setMarkingAll] = useState(false);
+
   // ── Auth guard ──
   useEffect(() => {
     if (!loading && (!isAuthenticated || !isAdmin)) {
@@ -113,7 +187,7 @@ export default function AdminPage() {
     if (!isAdmin) return;
     setLoadingData(true);
     try {
-      const [sRes, eRes, enrRes, cRes, pRes, uRes, payRes, prodRes, kitRes, ordRes, tRes] = await Promise.all([
+      const [sRes, eRes, enrRes, cRes, pRes, uRes, payRes, prodRes, kitRes, ordRes, tRes, schRes, comRes] = await Promise.all([
         authFetch('/api/admin/stats'),
         authFetch('/api/enquiries'),
         authFetch('/api/enrollments'),
@@ -121,10 +195,12 @@ export default function AdminPage() {
         authFetch('/api/programs?active=false'),
         authFetch('/api/users?role=parent'),
         authFetch('/api/payments/history'),
-        authFetch('/api/shop/products'),
-        authFetch('/api/shop/kits'),
+        authFetch('/api/shop/products?all=true'),
+        authFetch('/api/shop/kits?all=true'),
         authFetch('/api/shop/orders'),
         authFetch('/api/tournaments'),
+        authFetch('/api/schools'),
+        authFetch('/api/communities'),
       ]);
       if (sRes.ok) {
         const sData = await sRes.json();
@@ -141,6 +217,8 @@ export default function AdminPage() {
       if (kitRes.ok) setKits((await kitRes.json()).kits || []);
       if (ordRes.ok) setOrders((await ordRes.json()).orders || []);
       if (tRes.ok) setTournaments((await tRes.json()).tournaments || []);
+      if (schRes.ok) setSchools((await schRes.json()).schools || []);
+      if (comRes.ok) setCommunities((await comRes.json()).communities || []);
     } catch (e) { console.error('Admin load error:', e); }
     setLoadingData(false);
   }, [isAdmin, authFetch]);
@@ -156,11 +234,11 @@ export default function AdminPage() {
     if (res.ok) setPrograms((await res.json()).programs || []);
   };
   const refreshProducts = async () => {
-    const res = await authFetch('/api/shop/products');
+    const res = await authFetch('/api/shop/products?all=true');
     if (res.ok) setProducts((await res.json()).products || []);
   };
   const refreshKits = async () => {
-    const res = await authFetch('/api/shop/kits');
+    const res = await authFetch('/api/shop/kits?all=true');
     if (res.ok) setKits((await res.json()).kits || []);
   };
 
@@ -221,6 +299,17 @@ export default function AdminPage() {
 
   const openCreateProduct = () => openModal('createProduct', { inStock: true });
   const openCreateKit = () => openModal('createKit', { inStock: true });
+  const openEditProduct = (p) => openModal('editProduct', {
+    ...p,
+    categoryId: p.categoryId?._id || p.categoryId,
+    _slugManual: true,
+  }, p._id);
+  const openEditKit = (k) => openModal('editKit', {
+    ...k,
+    categoryId: k.categoryId?._id || k.categoryId,
+    contents: Array.isArray(k.contents) ? k.contents.join('\n') : (k.contents || ''),
+    _slugManual: true,
+  }, k._id);
 
   // ── Existing actions ──
   const updateEnquiry = async (id, status) => {
@@ -271,6 +360,90 @@ export default function AdminPage() {
       toast.error(err.error || 'Failed to award achievement');
     }
   };
+  // ── Session popover handlers ──
+  const openSessionPop = (enr) => {
+    const prog = enr.programId || {};
+    const next = (enr.sessionsCompleted || 0) + 1;
+    const total = prog.sessions || 0;
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://skillpadi.com';
+    const msg =
+      `🌟 Great session today!\n\n` +
+      `${enr.childName} just completed session ${next}${total ? `/${total}` : ''} of *${prog.name || 'their program'}*.\n\n` +
+      `View progress: ${origin}/dashboard/parent`;
+    setSessionPop({
+      enrId: enr._id,
+      childName: enr.childName,
+      programName: prog.name || '',
+      msg,
+      note: '',
+      milestones: prog.milestones || [],
+      sessionsCompleted: enr.sessionsCompleted || 0,
+      total,
+    });
+  };
+
+  const submitSessionUpdate = async (notify) => {
+    if (!sessionPop) return;
+    setSessionPopping(true);
+    const { enrId, msg, note, sessionsCompleted, total, childName, programName } = sessionPop;
+    const newCount = sessionsCompleted + 1;
+
+    const patchRes = await authFetch(`/api/enrollments/${enrId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ sessionsCompleted: newCount }),
+    });
+    if (!patchRes.ok) { toast.error('Failed to update session'); setSessionPopping(false); return; }
+    const patchData = await patchRes.json();
+    setEnrollments(prev => prev.map(e => e._id === enrId ? { ...e, ...patchData.enrollment } : e));
+
+    if (notify) {
+      await authFetch('/api/notifications/session-update', {
+        method: 'POST',
+        body: JSON.stringify({ enrollmentId: enrId, message: msg, note }),
+      });
+    }
+
+    const milestone = patchData.newMilestone;
+    const baseMsg = `Session ${newCount}${total ? `/${total}` : ''} recorded`;
+    const milestoneMsg = milestone ? ` 🏅 Milestone: ${milestone}` : '';
+    toast.success(notify ? `Updated & parent notified${milestoneMsg}` : `${baseMsg}${milestoneMsg}`);
+    setSessionPop(null);
+    setSessionPopping(false);
+  };
+
+  const markAllPresent = async () => {
+    if (checkedEnrs.size === 0) return;
+    setMarkingAll(true);
+    const ids = [...checkedEnrs];
+    await Promise.all(ids.map(id => {
+      const enr = enrollments.find(e => e._id === id);
+      if (!enr || enr.status !== 'active') return Promise.resolve();
+      return authFetch(`/api/enrollments/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ sessionsCompleted: (enr.sessionsCompleted || 0) + 1 }),
+      }).then(res => res.ok ? res.json() : null).then(data => {
+        if (data) setEnrollments(prev => prev.map(e => e._id === id ? { ...e, ...data.enrollment } : e));
+      });
+    }));
+    toast.success(`${ids.length} session${ids.length > 1 ? 's' : ''} updated`);
+    setCheckedEnrs(new Set());
+    setMarkingAll(false);
+  };
+
+  const toggleCheckedEnr = (id) => setCheckedEnrs(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const toggleAllEnrs = () => {
+    const active = enrollments.filter(e => e.status === 'active').map(e => e._id);
+    if (active.every(id => checkedEnrs.has(id))) {
+      setCheckedEnrs(new Set());
+    } else {
+      setCheckedEnrs(new Set(active));
+    }
+  };
+
   const toggleCoachActive = async (id, current) => {
     const res = await authFetch(`/api/coaches/${id}`, { method: 'PUT', body: JSON.stringify({ isActive: !current }) });
     if (res.ok) {
@@ -492,6 +665,62 @@ export default function AdminPage() {
     }
   };
 
+  // ── Edit Product ──
+  const submitEditProduct = async () => {
+    if (!form.name?.trim() || !form.price) { toast.error('Name and price are required'); return; }
+    setSubmitting(true);
+    const body = {
+      name: form.name, slug: form.slug || toSlug(form.name),
+      price: Number(form.price),
+      ...(form.categoryId && { categoryId: form.categoryId }),
+      ...(form.brand && { brand: form.brand }),
+      ...(form.description && { description: form.description }),
+      inStock: form.inStock !== false,
+    };
+    const res = await authFetch(`/api/shop/products/${editId}`, { method: 'PUT', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      toast.success('Product updated!');
+      closeModal();
+      await refreshProducts();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to update product');
+    }
+  };
+
+  // ── Edit Starter Kit ──
+  const submitEditKit = async () => {
+    if (!form.name?.trim() || !form.categoryId || !form.kitPrice || !form.individualPrice) {
+      toast.error('Required: name, category, kit price, individual price'); return;
+    }
+    setSubmitting(true);
+    const contentsArr = typeof form.contents === 'string'
+      ? form.contents.split('\n').map(s => s.trim()).filter(Boolean)
+      : (form.contents || []);
+    const body = {
+      name: form.name, slug: form.slug || toSlug(form.name),
+      categoryId: form.categoryId,
+      icon: form.icon || undefined,
+      contents: contentsArr,
+      individualPrice: Number(form.individualPrice),
+      kitPrice: Number(form.kitPrice),
+      ...(form.brand && { brand: form.brand }),
+      ...(form.description && { description: form.description }),
+      inStock: form.inStock !== false,
+    };
+    const res = await authFetch(`/api/shop/kits/${editId}`, { method: 'PUT', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      toast.success('Starter kit updated!');
+      closeModal();
+      await refreshKits();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to update kit');
+    }
+  };
+
   // ── Create Starter Kit ──
   const submitCreateKit = async () => {
     if (!form.name?.trim() || !form.categoryId || !form.kitPrice || !form.individualPrice) {
@@ -526,7 +755,7 @@ export default function AdminPage() {
   if (loading || !isAdmin) return (
     <div className="min-h-screen bg-cream flex items-center justify-center">
       <div className="text-center">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-primary to-teal-light flex items-center justify-center text-white text-sm font-extrabold mx-auto mb-3 animate-pulse">SP</div>
+        <img src="/logomark.svg" alt="SkillPadi" className="w-10 h-10 mx-auto mb-3 animate-pulse" />
         <p className="text-slate-400 text-xs">Loading admin...</p>
       </div>
     </div>
@@ -551,50 +780,6 @@ export default function AdminPage() {
   // ════════════════════════════════════════════════════════
   // MODALS
   // ════════════════════════════════════════════════════════
-  const Overlay = ({ children }) => (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 pt-8 overflow-y-auto" onClick={closeModal}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl" onClick={e => e.stopPropagation()}>
-        {children}
-      </div>
-    </div>
-  );
-
-  const ModalHeader = ({ title }) => (
-    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-      <h2 className="font-serif text-base font-bold text-slate-900">{title}</h2>
-      <button onClick={closeModal} className="w-7 h-7 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
-    </div>
-  );
-
-  const ModalFooter = ({ onSubmit, submitLabel = 'Save' }) => (
-    <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl">
-      <button onClick={closeModal} className="btn-outline text-xs px-4 py-2">Cancel</button>
-      <button onClick={onSubmit} disabled={submitting}
-        className="btn-primary text-xs px-5 py-2 disabled:opacity-60 disabled:cursor-not-allowed">
-        {submitting ? 'Saving...' : submitLabel}
-      </button>
-    </div>
-  );
-
-  const ModalBody = ({ children }) => (
-    <div className="px-5 py-4 space-y-4 max-h-[65vh] overflow-y-auto">{children}</div>
-  );
-
-  const SectionHead = ({ title }) => (
-    <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider pt-1 pb-1.5 border-b border-slate-100">{title}</div>
-  );
-
-  const Row = ({ children }) => <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{children}</div>;
-
-  const FL = ({ label, req, children }) => (
-    <div>
-      <label className="block text-[10px] font-semibold text-slate-600 mb-1">
-        {label}{req && <span className="text-red-400 ml-0.5">*</span>}
-      </label>
-      {children}
-    </div>
-  );
-
   const inp = (field, extra = {}) => ({
     value: fVal(field),
     onChange: setF(field),
@@ -894,13 +1079,14 @@ export default function AdminPage() {
 
   // ── Product Modal ──
   const ProductModal = () => {
+    const isEdit = modal === 'editProduct';
     const onNameChange = (e) => {
       const n = e.target.value;
       setForm(prev => ({ ...prev, name: n, slug: prev._slugManual ? prev.slug : toSlug(n) }));
     };
     return (
       <Overlay>
-        <ModalHeader title="Add New Product" />
+        <ModalHeader title={isEdit ? 'Edit Product' : 'Add New Product'} />
         <ModalBody>
           <SectionHead title="Product Details" />
           <Row>
@@ -928,13 +1114,15 @@ export default function AdminPage() {
           </FL>
           <CheckField field="inStock" label="In Stock" />
         </ModalBody>
-        <ModalFooter onSubmit={submitCreateProduct} submitLabel="Create Product" />
+        <ModalFooter onSubmit={isEdit ? submitEditProduct : submitCreateProduct}
+          submitLabel={isEdit ? 'Save Changes' : 'Create Product'} />
       </Overlay>
     );
   };
 
   // ── Starter Kit Modal ──
   const KitModal = () => {
+    const isEdit = modal === 'editKit';
     const onNameChange = (e) => {
       const n = e.target.value;
       setForm(prev => ({ ...prev, name: n, slug: prev._slugManual ? prev.slug : toSlug(n) }));
@@ -947,7 +1135,7 @@ export default function AdminPage() {
       : 0;
     return (
       <Overlay>
-        <ModalHeader title="Add New Starter Kit" />
+        <ModalHeader title={isEdit ? 'Edit Starter Kit' : 'Add New Starter Kit'} />
         <ModalBody>
           <SectionHead title="Kit Details" />
           <Row>
@@ -997,7 +1185,8 @@ export default function AdminPage() {
           </Row>
           <CheckField field="inStock" label="In Stock" />
         </ModalBody>
-        <ModalFooter onSubmit={submitCreateKit} submitLabel="Create Starter Kit" />
+        <ModalFooter onSubmit={isEdit ? submitEditKit : submitCreateKit}
+          submitLabel={isEdit ? 'Save Changes' : 'Create Starter Kit'} />
       </Overlay>
     );
   };
@@ -1077,6 +1266,307 @@ export default function AdminPage() {
       toast.error(e.error || 'Update failed');
     }
   };
+
+  // ── School approval handlers ──
+  const approveSchool = async (schoolId) => {
+    setApprovingSchool(schoolId + '_approving');
+    const res = await authFetch(`/api/schools/${schoolId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'approve' }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      toast.success(`School approved! Invite code: ${data.inviteCode}`);
+      const sRes = await authFetch('/api/schools');
+      if (sRes.ok) setSchools((await sRes.json()).schools || []);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to approve school');
+    }
+    setApprovingSchool(null);
+  };
+
+  const rejectSchool = async (schoolId) => {
+    const reason = rejectReason.trim() || undefined;
+    setApprovingSchool(schoolId + '_rejecting');
+    const res = await authFetch(`/api/schools/${schoolId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'reject', reason }),
+    });
+    if (res.ok) {
+      toast.success('School application rejected');
+      setRejectReason('');
+      const sRes = await authFetch('/api/schools');
+      if (sRes.ok) setSchools((await sRes.json()).schools || []);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to reject school');
+    }
+    setApprovingSchool(null);
+  };
+
+  const submitCreateSchool = async () => {
+    if (!form.name?.trim()) { toast.error('School name is required'); return; }
+    setSubmitting(true);
+    const slug = toSlug(form.name);
+    const body = {
+      name: form.name.trim(),
+      slug: form.slug || slug,
+      schoolType: form.schoolType || undefined,
+      area: form.area || undefined,
+      city: form.city || 'abuja',
+      address: form.address || undefined,
+      contactName: form.contactName || undefined,
+      contactRole: form.contactRole || undefined,
+      phone: form.phone || undefined,
+      email: form.email || undefined,
+      estimatedStudents: form.estimatedStudents ? Number(form.estimatedStudents) : undefined,
+      defaultMarkupPercent: form.defaultMarkupPercent ? Number(form.defaultMarkupPercent) : 15,
+      status: form.status || 'approved', // admin-created schools are auto-approved
+    };
+    const res = await authFetch('/api/schools', { method: 'POST', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      toast.success('School created!');
+      closeModal();
+      const sRes = await authFetch('/api/schools');
+      if (sRes.ok) setSchools((await sRes.json()).schools || []);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to create school');
+    }
+  };
+
+  const processSchoolPayout = async (schoolId, schoolName, pendingPayout) => {
+    if (!confirm(`Mark ₦${Number(pendingPayout).toLocaleString()} as paid to ${schoolName}?`)) return;
+    const res = await authFetch(`/api/schools/${schoolId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ pendingPayout: 0 }),
+    });
+    if (res.ok) {
+      toast.success('Payout processed — pendingPayout reset to ₦0');
+      const sRes = await authFetch('/api/schools');
+      if (sRes.ok) setSchools((await sRes.json()).schools || []);
+    } else {
+      toast.error('Failed to process payout');
+    }
+  };
+
+  const approveCommunity = async (communityId) => {
+    setApprovingCommunity(communityId + '_approving');
+    const res = await authFetch(`/api/communities/${communityId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'approve' }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      toast.success(`Estate activated! Invite code: ${data.inviteCode}`);
+      const r = await authFetch('/api/communities');
+      if (r.ok) setCommunities((await r.json()).communities || []);
+    } else {
+      toast.error('Failed to activate estate');
+    }
+    setApprovingCommunity(null);
+  };
+
+  const rejectCommunity = async (communityId) => {
+    const reason = communityRejectReason.trim() || undefined;
+    setApprovingCommunity(communityId + '_rejecting');
+    const res = await authFetch(`/api/communities/${communityId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'reject', reason }),
+    });
+    if (res.ok) {
+      toast.success('Partnership paused');
+      setCommunityRejectReason('');
+      const r = await authFetch('/api/communities');
+      if (r.ok) setCommunities((await r.json()).communities || []);
+    } else {
+      toast.error('Failed to update estate');
+    }
+    setApprovingCommunity(null);
+  };
+
+  const submitCreateCommunity = async () => {
+    if (!form.name?.trim()) { toast.error('Community name is required'); return; }
+    setSubmitting(true);
+    const slug = toSlug(form.name);
+    const body = {
+      name: form.name.trim(),
+      slug: form.slug || slug,
+      type: form.type || 'estate',
+      area: form.area || undefined,
+      city: form.city || 'abuja',
+      contactName: form.contactName || undefined,
+      contactRole: form.contactRole || undefined,
+      phone: form.phone || undefined,
+      email: form.email || undefined,
+      estimatedHouseholds: form.estimatedHouseholds ? Number(form.estimatedHouseholds) : undefined,
+      defaultMarkupPercent: form.defaultMarkupPercent ? Number(form.defaultMarkupPercent) : 10,
+      venueProvided: form.venueProvided !== false,
+      status: 'approved',
+    };
+    const res = await authFetch('/api/communities', { method: 'POST', body: JSON.stringify(body) });
+    setSubmitting(false);
+    if (res.ok) {
+      toast.success('Estate created!');
+      closeModal();
+      const r = await authFetch('/api/communities');
+      if (r.ok) setCommunities((await r.json()).communities || []);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to create estate');
+    }
+  };
+
+  const processCommunityPayout = async (communityId, communityName, pendingPayout) => {
+    if (!confirm(`Mark ₦${Number(pendingPayout).toLocaleString()} as paid to ${communityName}?`)) return;
+    const res = await authFetch(`/api/communities/${communityId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ pendingPayout: 0 }),
+    });
+    if (res.ok) {
+      toast.success('Payout processed');
+      const r = await authFetch('/api/communities');
+      if (r.ok) setCommunities((await r.json()).communities || []);
+    } else {
+      toast.error('Failed to process payout');
+    }
+  };
+
+  const CommunityModal = () => (
+    <Overlay>
+      <ModalHeader title="Add Estate / Community" />
+      <ModalBody>
+        <Row>
+          <FL label="Estate Name" req>
+            <input className="input-field text-xs w-full" value={fVal('name')} onChange={e => {
+              const n = e.target.value;
+              setForm(prev => ({ ...prev, name: n, slug: prev._slugManual ? prev.slug : toSlug(n) }));
+            }} placeholder="e.g. Gwarinpa Estate" />
+          </FL>
+          <FL label="Type">
+            <select className="input-field text-xs w-full" value={fVal('type') || 'estate'} onChange={setF('type')}>
+              <option value="estate">Gated Estate</option>
+              <option value="residential">Residential Compound</option>
+              <option value="community">Community</option>
+              <option value="compound">Housing Estate</option>
+            </select>
+          </FL>
+        </Row>
+        <Row>
+          <FL label="Area">
+            <input {...inp('area')} placeholder="e.g. Maitama, Gwarinpa" />
+          </FL>
+          <FL label="City">
+            <select className="input-field text-xs w-full" value={fVal('city') || 'abuja'} onChange={setF('city')}>
+              <option value="abuja">Abuja</option>
+              <option value="lagos">Lagos</option>
+            </select>
+          </FL>
+        </Row>
+        <SectionHead title="Contact" />
+        <Row>
+          <FL label="Contact Name">
+            <input {...inp('contactName')} placeholder="e.g. Mr. Chuka Obi" />
+          </FL>
+          <FL label="Role">
+            <input {...inp('contactRole')} placeholder="e.g. Estate Manager" />
+          </FL>
+        </Row>
+        <Row>
+          <FL label="Phone">
+            <input {...inp('phone')} placeholder="08012345678" />
+          </FL>
+          <FL label="Email">
+            <input {...inp('email', { type: 'email' })} placeholder="estate@email.ng" />
+          </FL>
+        </Row>
+        <SectionHead title="Commercial" />
+        <Row>
+          <FL label="Default Markup %">
+            <input {...inp('defaultMarkupPercent', { type: 'number', min: 0, max: 30 })} placeholder="10" />
+          </FL>
+          <FL label="Est. Households">
+            <input {...inp('estimatedHouseholds', { type: 'number', min: 0 })} placeholder="e.g. 150" />
+          </FL>
+        </Row>
+      </ModalBody>
+      <ModalFooter onSubmit={submitCreateCommunity} submitLabel="Create Estate" />
+    </Overlay>
+  );
+
+  const SchoolModal = () => (
+    <Overlay>
+      <ModalHeader title="Add School" />
+      <ModalBody>
+        <Row>
+          <FL label="School Name" req>
+            <input className="input-field text-xs w-full" value={fVal('name')} onChange={e => {
+              const n = e.target.value;
+              setForm(prev => ({ ...prev, name: n, slug: prev._slugManual ? prev.slug : toSlug(n) }));
+            }} placeholder="e.g. Greenfield Academy" />
+          </FL>
+          <FL label="Type">
+            <select className="input-field text-xs w-full" value={fVal('schoolType')} onChange={setF('schoolType')}>
+              <option value="">— select —</option>
+              {[
+                { id: 'nursery', label: 'Nursery (ages 2–5)' },
+                { id: 'primary', label: 'Primary (ages 6–11)' },
+                { id: 'secondary', label: 'Secondary (ages 12–17)' },
+                { id: 'nursery-primary', label: 'Nursery & Primary (ages 2–11)' },
+                { id: 'primary-secondary', label: 'Primary & Secondary (ages 6–17)' },
+                { id: 'all-through', label: 'All-through (ages 2–17)' },
+              ].map(t => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
+            </select>
+          </FL>
+        </Row>
+        <Row>
+          <FL label="Area / Neighbourhood">
+            <input {...inp('area')} placeholder="e.g. Maitama, Wuse 2" />
+          </FL>
+          <FL label="City">
+            <select className="input-field text-xs w-full" value={fVal('city') || 'abuja'} onChange={setF('city')}>
+              <option value="abuja">Abuja</option>
+              <option value="lagos">Lagos</option>
+            </select>
+          </FL>
+        </Row>
+        <FL label="Address">
+          <input {...inp('address')} placeholder="Full street address" />
+        </FL>
+        <SectionHead title="Contact" />
+        <Row>
+          <FL label="Contact Name">
+            <input {...inp('contactName')} placeholder="e.g. Mrs. Amaka Okafor" />
+          </FL>
+          <FL label="Role">
+            <input {...inp('contactRole')} placeholder="e.g. Principal, P.E. Head" />
+          </FL>
+        </Row>
+        <Row>
+          <FL label="Phone">
+            <input {...inp('phone')} placeholder="08012345678" />
+          </FL>
+          <FL label="Email">
+            <input {...inp('email', { type: 'email' })} placeholder="school@email.com" />
+          </FL>
+        </Row>
+        <SectionHead title="Pricing" />
+        <Row>
+          <FL label="Default Markup %">
+            <input {...inp('defaultMarkupPercent', { type: 'number', min: 0, max: 50 })} placeholder="15" />
+          </FL>
+          <FL label="Est. Students">
+            <input {...inp('estimatedStudents', { type: 'number', min: 0 })} placeholder="e.g. 200" />
+          </FL>
+        </Row>
+      </ModalBody>
+      <ModalFooter onSubmit={submitCreateSchool} submitLabel="Create School" />
+    </Overlay>
+  );
 
   const TournamentModal = () => {
     const isEdit = modal === 'editTournament';
@@ -1168,14 +1658,18 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-slate-50 flex">
 
-      {/* ── Modal portal ── */}
-      {(modal === 'createCoach' || modal === 'editCoach') && <CoachModal />}
-      {modal === 'vetting' && <VettingModal />}
-      {(modal === 'createProgram' || modal === 'editProgram') && <ProgramModal />}
-      {modal === 'createProduct' && <ProductModal />}
-      {modal === 'createKit' && <KitModal />}
-      {(modal === 'createTournament' || modal === 'editTournament') && <TournamentModal />}
-      {modal === 'tournamentResults' && <TournamentResultsModal />}
+      {/* ── Modal portal (context keeps Overlay/ModalHeader/ModalFooter stable across re-renders) ── */}
+      <ModalCtx.Provider value={{ onClose: closeModal, submitting }}>
+        {modal === 'createCommunity' && CommunityModal()}
+        {modal === 'createSchool' && SchoolModal()}
+        {(modal === 'createCoach' || modal === 'editCoach') && CoachModal()}
+        {modal === 'vetting' && VettingModal()}
+        {(modal === 'createProgram' || modal === 'editProgram') && ProgramModal()}
+        {(modal === 'createProduct' || modal === 'editProduct') && ProductModal()}
+        {(modal === 'createKit' || modal === 'editKit') && KitModal()}
+        {(modal === 'createTournament' || modal === 'editTournament') && TournamentModal()}
+        {modal === 'tournamentResults' && TournamentResultsModal()}
+      </ModalCtx.Provider>
 
       {/* ── Award Achievement Modal ── */}
       {awardModal && (
@@ -1218,11 +1712,91 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* ── Session Update Popover ── */}
+      {sessionPop && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => !sessionPopping && setSessionPop(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <div className="font-bold text-sm">+1 Session — {sessionPop.childName}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  {sessionPop.sessionsCompleted + 1}{sessionPop.total ? `/${sessionPop.total}` : ''} · {sessionPop.programName}
+                </div>
+              </div>
+              <button onClick={() => setSessionPop(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Pre-filled message */}
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Parent message</label>
+                <textarea
+                  rows={4}
+                  value={sessionPop.msg}
+                  onChange={e => setSessionPop(prev => ({ ...prev, msg: e.target.value }))}
+                  className="w-full text-xs border border-slate-200 rounded-lg p-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-teal-primary/30"
+                />
+              </div>
+              {/* Milestone pills */}
+              {sessionPop.milestones.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Programme milestones</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {sessionPop.milestones.map((m, i) => {
+                      const threshold = Math.round(((i + 1) / sessionPop.milestones.length) * (sessionPop.total || 1));
+                      const triggered = (sessionPop.sessionsCompleted + 1) === threshold;
+                      return (
+                        <span
+                          key={i}
+                          onClick={() => setSessionPop(prev => ({ ...prev, msg: prev.msg + `\n\n🏅 Milestone reached: ${m}` }))}
+                          className={`text-[10px] px-2 py-1 rounded-full border cursor-pointer transition-colors ${triggered ? 'bg-amber-50 border-amber-300 text-amber-700 font-semibold ring-1 ring-amber-300' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                          title={triggered ? `Triggered at session ${threshold}!` : `Triggered at session ${threshold}`}
+                        >
+                          {triggered && '🏅 '}{m}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <div className="text-[9px] text-slate-400 mt-1">Tap a milestone to append it to the message</div>
+                </div>
+              )}
+              {/* Coach note */}
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Coach note (optional)</label>
+                <input
+                  type="text"
+                  value={sessionPop.note}
+                  onChange={e => setSessionPop(prev => ({ ...prev, note: e.target.value }))}
+                  placeholder="e.g. Great form today, working on breathing technique"
+                  className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-teal-primary/30"
+                />
+              </div>
+              {/* Actions */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => submitSessionUpdate(true)}
+                  disabled={sessionPopping}
+                  className="btn-primary btn-sm flex-1 text-xs disabled:opacity-60"
+                >
+                  {sessionPopping ? 'Updating...' : '📲 Update & Notify Parent'}
+                </button>
+                <button
+                  onClick={() => submitSessionUpdate(false)}
+                  disabled={sessionPopping}
+                  className="btn-outline btn-sm text-xs disabled:opacity-60"
+                >
+                  Update Quietly
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Desktop Sidebar ── */}
       <aside className="w-52 bg-white border-r border-slate-200/80 min-h-screen shrink-0 hidden lg:flex flex-col">
         <div className="p-4 border-b border-slate-100">
           <Link href="/" className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-teal-primary to-teal-light flex items-center justify-center text-white text-[9px] font-extrabold">SP</div>
+            <img src="/logomark.svg" alt="SkillPadi" className="w-7 h-7" />
             <span className="font-serif text-sm text-teal-primary">SkillPadi</span>
           </Link>
           <div className="text-[9px] text-slate-400 mt-1">Admin Panel</div>
@@ -1447,10 +2021,34 @@ export default function AdminPage() {
           {/* ════════ ENROLLMENTS ════════ */}
           {tab === 'enrollments' && (
             <div className="animate-fade-in">
-              <h1 className="font-serif text-xl mb-4">Enrollments <span className="text-sm font-sans text-slate-400">({enrollments.length})</span></h1>
+              <div className="flex items-center justify-between mb-4">
+                <h1 className="font-serif text-xl">Enrollments <span className="text-sm font-sans text-slate-400">({enrollments.length})</span></h1>
+                {checkedEnrs.size > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">{checkedEnrs.size} selected</span>
+                    <button
+                      onClick={markAllPresent}
+                      disabled={markingAll}
+                      className="btn-primary btn-sm text-xs px-3 py-1.5"
+                    >
+                      {markingAll ? 'Updating...' : `✅ Mark All Present (+1)`}
+                    </button>
+                    <button onClick={() => setCheckedEnrs(new Set())} className="text-xs text-slate-400 hover:text-slate-600">Clear</button>
+                  </div>
+                )}
+              </div>
               <div className="bg-white rounded-xl border border-slate-200/80 overflow-auto">
                 <table className="w-full text-xs">
                   <thead><tr className="border-b border-slate-100 bg-slate-50/50">
+                    <th className="p-3 w-8">
+                      <input
+                        type="checkbox"
+                        className="rounded"
+                        onChange={toggleAllEnrs}
+                        checked={enrollments.filter(e => e.status === 'active').length > 0 &&
+                          enrollments.filter(e => e.status === 'active').every(e => checkedEnrs.has(e._id))}
+                      />
+                    </th>
                     <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Child</th>
                     <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Program</th>
                     <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Parent</th>
@@ -1464,6 +2062,16 @@ export default function AdminPage() {
                       const done = pct(enr.sessionsCompleted || 0, prog.sessions || 1);
                       return (
                         <tr key={enr._id} className="border-b border-slate-50 hover:bg-slate-50/50">
+                          <td className="p-3">
+                            {enr.status === 'active' && (
+                              <input
+                                type="checkbox"
+                                className="rounded"
+                                checked={checkedEnrs.has(enr._id)}
+                                onChange={() => toggleCheckedEnr(enr._id)}
+                              />
+                            )}
+                          </td>
                           <td className="p-3"><div className="font-semibold">{enr.childName}</div><div className="text-[9px] text-slate-400">{enr.childAge ? `${enr.childAge} yrs` : ''}</div></td>
                           <td className="p-3">{prog.categoryId?.icon} {prog.name}</td>
                           <td className="p-3 text-[10px]">{enr.userId?.name || '—'}<br /><span className="text-slate-400">{enr.userId?.phone || enr.userId?.email}</span></td>
@@ -1475,8 +2083,10 @@ export default function AdminPage() {
                           <td className="p-3">
                             <div className="flex gap-1 flex-wrap">
                               {enr.status === 'active' && (
-                                <button onClick={() => updateEnrollment(enr._id, { sessionsCompleted: (enr.sessionsCompleted || 0) + 1 })}
-                                  className="btn-outline btn-sm text-[9px]">+1</button>
+                                <button
+                                  onClick={() => openSessionPop(enr)}
+                                  className="btn-outline btn-sm text-[9px] font-bold"
+                                >+1 Session</button>
                               )}
                               {enr.status === 'active' && (
                                 <button onClick={() => updateEnrollment(enr._id, { status: 'completed' })}
@@ -1820,17 +2430,18 @@ export default function AdminPage() {
                     </div>
                   ) : kits.map(k => (
                     <div key={k._id} className="flex justify-between py-2 border-b border-slate-50 last:border-0">
-                      <div>
+                      <div className="flex-1 min-w-0">
                         <div className="text-[11px] font-semibold">{k.icon} {k.name}</div>
                         <div className="text-[9px] text-slate-400">{k.brand || ''} · {k.sold || 0} sold · {k.contents?.length || 0} items</div>
                         <div className="text-[9px] text-emerald-600 font-semibold">
                           Save {fmt(k.individualPrice - k.kitPrice)} ({Math.round(((k.individualPrice - k.kitPrice) / k.individualPrice) * 100)}%)
                         </div>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right ml-2 shrink-0">
                         <div className="text-[11px] font-semibold">{fmt(k.kitPrice)}</div>
                         <div className="text-[9px] text-slate-400 line-through">{fmt(k.individualPrice)}</div>
                         <span className={`badge ${k.inStock ? 'badge-green' : 'badge-gray'} text-[8px]`}>{k.inStock ? 'In stock' : 'Out'}</span>
+                        <button onClick={() => openEditKit(k)} className="block text-[9px] text-indigo-600 hover:text-indigo-800 font-semibold mt-0.5">Edit</button>
                       </div>
                     </div>
                   ))}
@@ -1849,14 +2460,15 @@ export default function AdminPage() {
                     </div>
                   ) : products.map(p => (
                     <div key={p._id} className="flex justify-between py-2 border-b border-slate-50 last:border-0">
-                      <div>
+                      <div className="flex-1 min-w-0">
                         <div className="text-[11px] font-semibold">{p.categoryId?.icon} {p.name}</div>
                         <div className="text-[9px] text-slate-400">{p.brand || ''} · {p.sold || 0} sold</div>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right ml-2 shrink-0">
                         <span className="text-[11px] font-semibold">{fmt(p.price)}</span>
                         <br />
                         <span className={`badge ${p.inStock ? 'badge-green' : 'badge-gray'} text-[8px]`}>{p.inStock ? 'In stock' : 'Out'}</span>
+                        <button onClick={() => openEditProduct(p)} className="block text-[9px] text-indigo-600 hover:text-indigo-800 font-semibold mt-0.5">Edit</button>
                       </div>
                     </div>
                   ))}
@@ -1879,6 +2491,265 @@ export default function AdminPage() {
                   )) : <p className="text-[11px] text-slate-400 text-center py-4">No orders yet.</p>}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ════════ SCHOOLS ════════ */}
+          {tab === 'schools' && (
+            <div className="animate-fade-in">
+              <div className="flex items-center justify-between mb-4">
+                <h1 className="font-serif text-xl">Schools</h1>
+                <div className="flex gap-2">
+                  <a href="/schools/apply" target="_blank" rel="noreferrer" className="btn-outline text-[10px] px-2.5 py-1">View Apply Page ↗</a>
+                  <button onClick={() => openModal('createSchool', { city: 'abuja', status: 'approved', defaultMarkupPercent: 15 })} className="btn-primary text-[10px] px-2.5 py-1">+ Add School</button>
+                </div>
+              </div>
+
+              {/* Sub-tabs */}
+              <div className="flex gap-1 mb-4 border-b border-slate-200">
+                {[
+                  { id: 'pending', label: `Pending (${schools.filter(s => s.status === 'pending').length})` },
+                  { id: 'approved', label: `Active (${schools.filter(s => s.status === 'approved').length})` },
+                  { id: 'all', label: `All (${schools.length})` },
+                ].map(st => (
+                  <button key={st.id} onClick={() => setSchoolTab(st.id)}
+                    className={`px-3 py-1.5 text-[11px] font-semibold rounded-t-lg -mb-px transition-colors ${
+                      schoolTab === st.id ? 'bg-white border border-b-white border-slate-200 text-teal-primary' : 'text-slate-400 hover:text-slate-600'
+                    }`}>{st.label}</button>
+                ))}
+              </div>
+
+              {(() => {
+                const filtered = schools.filter(s =>
+                  schoolTab === 'all' ? true :
+                  schoolTab === 'pending' ? s.status === 'pending' :
+                  s.status === 'approved'
+                );
+                if (filtered.length === 0) return (
+                  <div className="bg-white rounded-xl border border-slate-200/80 p-10 text-center text-slate-400 text-sm">
+                    No {schoolTab === 'all' ? '' : schoolTab} schools.
+                  </div>
+                );
+                return (
+                  <div className="space-y-4">
+                    {filtered.map(sch => (
+                      <div key={sch._id} className="bg-white rounded-xl border border-slate-200/80 p-5">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <div className="font-bold text-sm">{sch.name}</div>
+                              <span className={`badge ${sch.status === 'approved' ? 'badge-green' : sch.status === 'rejected' ? 'badge-red' : 'badge-amber'} text-[9px]`}>
+                                {sch.status}
+                              </span>
+                              {sch.schoolType && <span className="badge badge-gray text-[9px]">{sch.schoolType}</span>}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mb-2">
+                              📍 {sch.area || '—'}{sch.address ? ` · ${sch.address}` : ''}
+                              {sch.estimatedStudents ? ` · ~${sch.estimatedStudents} students` : ''}
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-[10px]">
+                              {sch.contactName && <div><span className="text-slate-400">Contact:</span> <strong>{sch.contactName}</strong>{sch.contactRole ? ` (${sch.contactRole})` : ''}</div>}
+                              {sch.phone && <div><span className="text-slate-400">Phone:</span> <strong>{sch.phone}</strong></div>}
+                              {sch.email && <div><span className="text-slate-400">Email:</span> <strong>{sch.email}</strong></div>}
+                              {sch.activeStudents > 0 && <div><span className="text-slate-400">Enrolled:</span> <strong>{sch.activeStudents} students</strong></div>}
+                              {sch.applicationDate && <div><span className="text-slate-400">Applied:</span> {new Date(sch.applicationDate).toLocaleDateString()}</div>}
+                              {sch.defaultMarkupPercent !== undefined && <div><span className="text-slate-400">Markup:</span> <strong>{sch.defaultMarkupPercent}%</strong></div>}
+                              {sch.totalEarnings > 0 && <div><span className="text-slate-400">Total Earned:</span> <strong className="text-teal-primary">{fmt(sch.totalEarnings)}</strong></div>}
+                              {sch.pendingPayout > 0 && <div><span className="text-slate-400">Pending Payout:</span> <strong className="text-amber-600">{fmt(sch.pendingPayout)}</strong></div>}
+                            </div>
+                            {sch.interestedCategories?.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {sch.interestedCategories.map(c => (
+                                  <span key={c._id || c} className="badge badge-blue text-[8px]">{c.icon} {c.name}</span>
+                                ))}
+                              </div>
+                            )}
+                            {sch.facilities?.length > 0 && (
+                              <div className="text-[9px] text-slate-400 mt-1">
+                                Facilities: {sch.facilities.join(', ')}
+                              </div>
+                            )}
+                            {sch.notes && <div className="text-[10px] text-slate-500 mt-1 italic">&ldquo;{sch.notes}&rdquo;</div>}
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex flex-col gap-2 shrink-0">
+                            {sch.phone && (
+                              <a href={`https://wa.me/${sch.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${sch.contactName || 'there'}, this is SkillPadi regarding your school application for ${sch.name}.`)}`}
+                                target="_blank" rel="noreferrer"
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white text-[10px] font-semibold rounded-lg hover:bg-green-600 transition-colors">
+                                💬 WhatsApp
+                              </a>
+                            )}
+                            {sch.status === 'pending' && (
+                              <>
+                                <button
+                                  onClick={() => approveSchool(sch._id)}
+                                  disabled={approvingSchool === sch._id + '_approving'}
+                                  className="px-3 py-1.5 bg-emerald-500 text-white text-[10px] font-semibold rounded-lg hover:bg-emerald-600 disabled:opacity-60 transition-colors">
+                                  {approvingSchool === sch._id + '_approving' ? '…' : '✓ Approve'}
+                                </button>
+                                <div className="flex gap-1">
+                                  <input
+                                    className="input-field text-[10px] px-2 py-1 w-28"
+                                    placeholder="Reason (opt.)"
+                                    value={rejectReason}
+                                    onChange={e => setRejectReason(e.target.value)}
+                                  />
+                                  <button
+                                    onClick={() => rejectSchool(sch._id)}
+                                    disabled={approvingSchool === sch._id + '_rejecting'}
+                                    className="px-2.5 py-1 bg-red-500 text-white text-[10px] font-semibold rounded-lg hover:bg-red-600 disabled:opacity-60 transition-colors">
+                                    {approvingSchool === sch._id + '_rejecting' ? '…' : '✗ Reject'}
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                            {sch.status === 'approved' && sch.pendingPayout > 0 && (
+                              <button
+                                onClick={() => processSchoolPayout(sch._id, sch.name, sch.pendingPayout)}
+                                className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-semibold rounded-lg hover:bg-emerald-100 transition-colors">
+                                💳 Process Payout ({fmt(sch.pendingPayout)})
+                              </button>
+                            )}
+                            {sch.status === 'approved' && (
+                              <button
+                                onClick={async () => {
+                                  await authFetch(`/api/schools/${sch._id}`, { method: 'PUT', body: JSON.stringify({ status: 'suspended', isActive: false }) });
+                                  toast.success('School suspended');
+                                  const r = await authFetch('/api/schools');
+                                  if (r.ok) setSchools((await r.json()).schools || []);
+                                }}
+                                className="px-3 py-1.5 bg-slate-200 text-slate-600 text-[10px] font-semibold rounded-lg hover:bg-slate-300 transition-colors">
+                                Suspend
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* ════════ ESTATES / COMMUNITIES ════════ */}
+          {tab === 'communities' && (
+            <div className="animate-fade-in">
+              <div className="flex items-center justify-between mb-4">
+                <h1 className="font-serif text-xl">Estates & Communities</h1>
+                <div className="flex gap-2">
+                  <a href="/communities/apply" target="_blank" rel="noreferrer" className="btn-outline text-[10px] px-2.5 py-1">View Apply Page ↗</a>
+                  <button onClick={() => openModal('createCommunity', { city: 'abuja', type: 'estate', venueProvided: true, defaultMarkupPercent: 10 })} className="btn-primary text-[10px] px-2.5 py-1">+ Add Estate</button>
+                </div>
+              </div>
+
+              <div className="flex gap-1 mb-4 border-b border-slate-200">
+                {[
+                  { id: 'pending', label: `New (${communities.filter(c => c.status === 'pending').length})` },
+                  { id: 'approved', label: `Active (${communities.filter(c => c.status === 'approved').length})` },
+                  { id: 'all', label: `All (${communities.length})` },
+                ].map(st => (
+                  <button key={st.id} onClick={() => setCommunityTab(st.id)}
+                    className={`px-3 py-1.5 text-[11px] font-semibold rounded-t-lg -mb-px transition-colors ${
+                      communityTab === st.id ? 'bg-white border border-b-white border-slate-200 text-teal-primary' : 'text-slate-400 hover:text-slate-600'
+                    }`}>{st.label}</button>
+                ))}
+              </div>
+
+              {(() => {
+                const filtered = communities.filter(c =>
+                  communityTab === 'all' ? true :
+                  communityTab === 'pending' ? c.status === 'pending' :
+                  c.status === 'approved'
+                );
+                if (filtered.length === 0) return (
+                  <div className="bg-white rounded-xl border border-slate-200/80 p-10 text-center text-slate-400 text-sm">
+                    No {communityTab === 'all' ? '' : communityTab} estates found.
+                  </div>
+                );
+                return (
+                  <div className="space-y-4">
+                    {filtered.map(com => (
+                      <div key={com._id} className="bg-white rounded-xl border border-slate-200/80 p-5">
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <div className="font-bold text-sm">{com.name}</div>
+                              <span className={`badge ${com.status === 'approved' ? 'badge-green' : com.status === 'rejected' ? 'badge-red' : 'badge-amber'} text-[9px]`}>
+                                {com.status === 'pending' ? 'Setting up' : com.status === 'approved' ? 'Active' : com.status}
+                              </span>
+                              {com.type && <span className="badge badge-gray text-[9px]">{com.type}</span>}
+                              {com.venueProvided && <span className="badge badge-blue text-[9px]">🏟️ Venue</span>}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mb-2">
+                              📍 {com.area || '—'}{com.city ? `, ${com.city}` : ''}
+                              {com.estimatedHouseholds ? ` · ~${com.estimatedHouseholds} households` : ''}
+                              {com.estimatedKids ? ` · ~${com.estimatedKids} kids` : ''}
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-[10px]">
+                              {com.contactName && <div><span className="text-slate-400">Contact:</span> <strong>{com.contactName}</strong></div>}
+                              {com.phone && <div><span className="text-slate-400">Phone:</span> <strong>{com.phone}</strong></div>}
+                              {com.activeResidents > 0 && <div><span className="text-slate-400">Residents:</span> <strong>{com.activeResidents}</strong></div>}
+                              {com.defaultMarkupPercent !== undefined && <div><span className="text-slate-400">Markup:</span> <strong>{com.defaultMarkupPercent}%</strong></div>}
+                              {com.totalEarnings > 0 && <div><span className="text-slate-400">Earned:</span> <strong className="text-teal-primary">{fmt(com.totalEarnings)}</strong></div>}
+                              {com.pendingPayout > 0 && <div><span className="text-slate-400">Payout due:</span> <strong className="text-amber-600">{fmt(com.pendingPayout)}</strong></div>}
+                            </div>
+                            {com.facilities?.length > 0 && (
+                              <div className="text-[9px] text-slate-400 mt-1.5">
+                                Facilities: {(com.facilities || []).map(f => typeof f === 'string' ? f : f.type).join(', ')}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex flex-col gap-2 shrink-0">
+                            {com.phone && (
+                              <a href={`https://wa.me/${com.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${com.contactName || 'there'}, this is SkillPadi regarding your estate partnership for ${com.name}.`)}`}
+                                target="_blank" rel="noreferrer"
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white text-[10px] font-semibold rounded-lg hover:bg-green-600 transition-colors">
+                                💬 WhatsApp
+                              </a>
+                            )}
+                            {com.status === 'pending' && (
+                              <>
+                                <button onClick={() => approveCommunity(com._id)}
+                                  disabled={approvingCommunity === com._id + '_approving'}
+                                  className="px-3 py-1.5 bg-emerald-500 text-white text-[10px] font-semibold rounded-lg hover:bg-emerald-600 disabled:opacity-60 transition-colors">
+                                  {approvingCommunity === com._id + '_approving' ? '…' : '✓ Activate'}
+                                </button>
+                                <div className="flex gap-1">
+                                  <input className="input-field text-[10px] px-2 py-1 w-28" placeholder="Reason (opt.)"
+                                    value={communityRejectReason} onChange={e => setCommunityRejectReason(e.target.value)} />
+                                  <button onClick={() => rejectCommunity(com._id)}
+                                    disabled={approvingCommunity === com._id + '_rejecting'}
+                                    className="px-2.5 py-1 bg-slate-400 text-white text-[10px] font-semibold rounded-lg hover:bg-slate-500 disabled:opacity-60 transition-colors">
+                                    {approvingCommunity === com._id + '_rejecting' ? '…' : 'Not Now'}
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                            {com.status === 'approved' && com.pendingPayout > 0 && (
+                              <button onClick={() => processCommunityPayout(com._id, com.name, com.pendingPayout)}
+                                className="px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-semibold rounded-lg hover:bg-emerald-100 transition-colors">
+                                💳 Pay {fmt(com.pendingPayout)}
+                              </button>
+                            )}
+                            {com.status === 'approved' && (
+                              <button onClick={async () => {
+                                await authFetch(`/api/communities/${com._id}`, { method: 'PUT', body: JSON.stringify({ status: 'suspended', isActive: false }) });
+                                toast.success('Estate suspended');
+                                const r = await authFetch('/api/communities');
+                                if (r.ok) setCommunities((await r.json()).communities || []);
+                              }} className="px-3 py-1.5 bg-slate-200 text-slate-600 text-[10px] font-semibold rounded-lg hover:bg-slate-300 transition-colors">Suspend</button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

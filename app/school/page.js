@@ -106,9 +106,7 @@ export default function SchoolPortalPage() {
       {/* Top bar */}
       <div className="px-6 py-4 flex items-center justify-between border-b border-slate-800">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center text-white text-[10px] font-extrabold">
-            SP
-          </div>
+          <img src="/logomark.svg" alt="SkillPadi" className="w-7 h-7" />
           <div>
             <div className="text-white text-xs font-bold leading-tight">School Portal</div>
             <div className="text-slate-500 text-[9px] leading-tight">Powered by SkillPadi</div>

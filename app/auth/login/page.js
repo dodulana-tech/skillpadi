@@ -48,9 +48,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-primary to-teal-light flex items-center justify-center text-white text-sm font-extrabold">
-              SP
-            </div>
+            <img src="/logomark.svg" alt="SkillPadi" className="w-10 h-10" />
             <span className="font-serif text-xl text-teal-primary">SkillPadi</span>
           </Link>
           <h1 className="font-serif text-2xl mt-4">Welcome back</h1>

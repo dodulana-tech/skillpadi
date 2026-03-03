@@ -27,7 +27,7 @@ export default function Navbar() {
     <nav className="fixed top-0 left-0 right-0 z-50 bg-cream/92 backdrop-blur-xl border-b border-black/5">
       <div className="page-container flex items-center justify-between h-14">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-primary to-teal-light flex items-center justify-center text-white text-[10px] font-extrabold">SP</div>
+          <img src="/logomark.svg" alt="SkillPadi" className="w-8 h-8" />
           <span className="font-serif text-lg text-teal-primary">SkillPadi</span>
         </Link>
 
@@ -39,6 +39,7 @@ export default function Navbar() {
           <Link href="/shop" className="hover:text-slate-900 transition-colors">Shop</Link>
           <Link href="/blog" className="hover:text-slate-900 transition-colors">Blog</Link>
           <Link href="/#how" className="hover:text-slate-900 transition-colors">How It Works</Link>
+          <Link href="/schools/apply" className="font-semibold text-teal-primary hover:text-teal-700 transition-colors">For Schools</Link>
         </div>
 
         <div className="flex items-center gap-2">
@@ -94,6 +95,7 @@ export default function Navbar() {
           <Link href="/shop" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">Shop</Link>
           <Link href="/blog" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">Blog</Link>
           <Link href="/#how" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-1.5">How It Works</Link>
+          <Link href="/schools/apply" onClick={() => setMobileOpen(false)} className="block text-sm font-semibold text-teal-primary py-1.5">🏫 For Schools</Link>
         </div>
       )}
     </nav>

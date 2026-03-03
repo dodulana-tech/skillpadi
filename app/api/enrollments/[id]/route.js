@@ -44,8 +44,20 @@ export const PATCH = handler(async (request, { params }) => {
   if (body.notes) update.notes = body.notes;
 
   const enrollment = await Enrollment.findByIdAndUpdate(id, update, { new: true, runValidators: true })
-    .populate('programId', 'name categoryId duration');
+    .populate('programId', 'name categoryId duration milestones sessions');
   if (!enrollment) return error('Enrollment not found', 404);
+
+  // ── Detect triggered program milestone ──────────────────────────
+  let newMilestone = null;
+  if (typeof body.sessionsCompleted === 'number' && enrollment.programId?.milestones?.length) {
+    const milestones = enrollment.programId.milestones;
+    const total = enrollment.programId.sessions || 1;
+    const idx = milestones.findIndex((_, i) => {
+      const threshold = Math.round(((i + 1) / milestones.length) * total);
+      return body.sessionsCompleted === threshold;
+    });
+    if (idx >= 0) newMilestone = milestones[idx];
+  }
 
   // ── Passport integration (fire-and-forget) ──────────────────────
   // When sessionsCompleted is incremented, update the child's passport
@@ -165,5 +177,5 @@ export const PATCH = handler(async (request, { params }) => {
     })();
   }
 
-  return success({ enrollment });
+  return success({ enrollment, newMilestone });
 });

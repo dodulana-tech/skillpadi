@@ -33,6 +33,8 @@ export default function EnrollmentCheckout({ program, onClose }) {
   const [kit, setKit] = useState(null);
   const [loadingKit, setLoadingKit] = useState(true);
   const [paying, setPaying] = useState(false);
+  const [schoolPricing, setSchoolPricing] = useState(null); // { parentTotalPrice, schoolMarkup, schoolId }
+  const [communityPricing, setCommunityPricing] = useState(null); // { residentTotalPrice, ... }
 
   const savedChildren = dbUser?.children || [];
   const hasChildren = savedChildren.length > 0;
@@ -56,6 +58,36 @@ export default function EnrollmentCheckout({ program, onClose }) {
       setIsNewChild(false);
     }
   }, [hasChildren]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch school pricing if parent is affiliated with a school
+  useEffect(() => {
+    const schoolId = dbUser?.schoolId;
+    if (!schoolId || !program._id) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/schools/${schoolId}/pricing?programId=${program._id}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.pricing) setSchoolPricing(data.pricing);
+        }
+      } catch { /* ignore — fall back to base price */ }
+    })();
+  }, [dbUser?.schoolId, program._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch community pricing if parent is a resident
+  useEffect(() => {
+    const communityId = dbUser?.communityId;
+    if (!communityId || !program._id) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/communities/${communityId}/pricing?programId=${program._id}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.pricing) setCommunityPricing(data.pricing);
+        }
+      } catch { /* ignore */ }
+    })();
+  }, [dbUser?.communityId, program._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch matching starter kit
   useEffect(() => {
@@ -118,7 +150,10 @@ export default function EnrollmentCheckout({ program, onClose }) {
 
   const kitPrice = addKit && kit ? kit.kitPrice : 0;
   const membershipPrice = needsMembership ? MEMBERSHIP_FEE : 0;
-  const subtotal = programTotal + kitPrice + membershipPrice;
+  // School markup > community resident price > base price
+  const effectiveProgramTotal = schoolPricing?.parentTotalPrice ?? communityPricing?.residentTotalPrice ?? programTotal;
+  const effectivePricePerSession = schoolPricing?.parentPricePerSession ?? communityPricing?.residentPricePerSession ?? program.pricePerSession;
+  const subtotal = effectiveProgramTotal + kitPrice + membershipPrice;
   const vat = Math.round(subtotal * VAT_RATE);
   const total = subtotal + vat;
   const spots = program.spotsTotal - program.spotsTaken;
@@ -163,7 +198,7 @@ export default function EnrollmentCheckout({ program, onClose }) {
     setPaying(true);
     try {
       const items = [
-        { type: 'enrollment', programId: program._id, amount: programTotal, label: program.name },
+        { type: 'enrollment', programId: program._id, amount: effectiveProgramTotal, label: program.name },
       ];
       if (addKit && kit) {
         items.push({ type: 'starter-kit', kitId: kit._id, amount: kit.kitPrice, label: kit.name });
@@ -172,14 +207,27 @@ export default function EnrollmentCheckout({ program, onClose }) {
         items.push({ type: 'membership', amount: MEMBERSHIP_FEE, label: 'SkillPadi Membership' });
       }
 
+      const checkoutPayload = {
+        items,
+        childName: childName.trim(),
+        childAge: Number(childAge),
+        programId: program._id,
+      };
+
+      // Attach school revenue split if applicable
+      if (schoolPricing && dbUser?.schoolId) {
+        checkoutPayload.schoolId = String(dbUser.schoolId);
+        checkoutPayload.schoolMarkup = schoolPricing.markupAmount * (schoolPricing.sessions || 1);
+      }
+      // Attach community revenue split if applicable
+      if (!schoolPricing && communityPricing && dbUser?.communityId) {
+        checkoutPayload.communityId = String(dbUser.communityId);
+        checkoutPayload.communityMarkup = (communityPricing.residentPricePerSession - communityPricing.basePricePerSession) * (communityPricing.sessions || 1);
+      }
+
       const res = await authFetch('/api/payments/checkout', {
         method: 'POST',
-        body: JSON.stringify({
-          items,
-          childName: childName.trim(),
-          childAge: Number(childAge),
-          programId: program._id,
-        }),
+        body: JSON.stringify(checkoutPayload),
       });
 
       const data = await res.json();
@@ -431,9 +479,11 @@ export default function EnrollmentCheckout({ program, onClose }) {
             <div className="flex justify-between text-xs py-1.5 border-b border-slate-100">
               <div>
                 <div className="font-semibold">{cat.icon} {program.name}</div>
-                <div className="text-[10px] text-slate-400">{program.sessions} sessions × {fmt(program.pricePerSession)}</div>
+                <div className="text-[10px] text-slate-400">
+                  {program.sessions} sessions × {fmt(effectivePricePerSession)}
+                </div>
               </div>
-              <span className="font-semibold">{fmt(programTotal)}</span>
+              <span className="font-semibold">{fmt(effectiveProgramTotal)}</span>
             </div>
 
             {addKit && kit && (

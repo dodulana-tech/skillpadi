@@ -1,5 +1,9 @@
 import mongoose from 'mongoose';
 
+if (mongoose.models.Enquiry) {
+  delete mongoose.models.Enquiry;
+}
+
 const EnquirySchema = new mongoose.Schema({
   parentName: { type: String, required: true },
   phone: { type: String, required: true },
@@ -17,11 +21,11 @@ const EnquirySchema = new mongoose.Schema({
 
   source: {
     type: String,
-    enum: ['website', 'whatsapp', 'referral', 'social', 'school', 'other'],
+    enum: ['website', 'whatsapp', 'referral', 'social', 'school', 'community', 'school-partnership', 'community-partnership', 'lagos-waitlist', 'other'],
     default: 'website',
   },
 
-  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // admin user
+  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   notes: String,
   followUpDate: Date,
 
@@ -33,4 +37,4 @@ const EnquirySchema = new mongoose.Schema({
 
 EnquirySchema.index({ status: 1, createdAt: -1 });
 
-export default mongoose.models.Enquiry || mongoose.model('Enquiry', EnquirySchema);
+export default mongoose.model('Enquiry', EnquirySchema);

@@ -26,6 +26,13 @@ const PaymentSchema = new mongoose.Schema({
   channel: String, // "card", "bank", "ussd", "bank_transfer"
   paidAt: Date,
 
+  // Partner revenue split (school OR community — mutually exclusive)
+  baseAmount: Number, // SkillPadi's portion of enrollment amount
+  schoolMarkup: Number, // school's earning on this payment
+  schoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'School' },
+  communityMarkup: Number, // community/estate's earning
+  communityId: { type: mongoose.Schema.Types.ObjectId, ref: 'Community' },
+
   // Linked entities
   enrollmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enrollment' },
   orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },

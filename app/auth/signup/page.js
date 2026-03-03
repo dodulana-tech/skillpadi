@@ -1,24 +1,46 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 
 export default function SignupPage() {
   const { signInWithGoogle, signUpWithEmail } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [referrerId, setReferrerId] = useState('');
+
+  useEffect(() => {
+    const ref = searchParams.get('ref');
+    if (ref) setReferrerId(ref);
+  }, [searchParams]);
+
+  const trackReferral = async (token, newUserId) => {
+    if (!referrerId) return;
+    try {
+      await fetch(`/api/users/${referrerId}/referral`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ referredUserId: newUserId }),
+      });
+    } catch (e) { /* non-blocking */ }
+  };
 
   const handleGoogleSignUp = async () => {
     try {
       setLoading(true);
-      await signInWithGoogle();
+      const user = await signInWithGoogle();
+      if (referrerId && user) {
+        const token = await user.getIdToken();
+        await trackReferral(token, user.uid);
+      }
       router.push('/dashboard/parent');
     } catch (err) {
       setError(err.message);
@@ -38,14 +60,17 @@ export default function SignupPage() {
       setError('');
       const user = await signUpWithEmail(email, password);
 
-      // Update profile in DB with name and phone
       const token = await user.getIdToken();
+      const patchBody = { name, phone };
+      if (referrerId) patchBody.referredBy = referrerId;
+
       await fetch('/api/users', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, phone }),
+        body: JSON.stringify(patchBody),
       });
 
+      await trackReferral(token, user.uid);
       router.push('/dashboard/parent');
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') setError('Email already registered');
@@ -60,7 +85,7 @@ export default function SignupPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-primary to-teal-light flex items-center justify-center text-white text-sm font-extrabold">SP</div>
+            <img src="/logomark.svg" alt="SkillPadi" className="w-10 h-10" />
             <span className="font-serif text-xl text-teal-primary">SkillPadi</span>
           </Link>
           <h1 className="font-serif text-2xl mt-4">Create your account</h1>

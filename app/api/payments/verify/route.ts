@@ -6,6 +6,8 @@ import Payment from '@/models/Payment';
 import Program from '@/models/Program';
 import Enrollment from '@/models/Enrollment';
 import User from '@/models/User';
+import School from '@/models/School';
+import Community from '@/models/Community';
 import { verifyPayment } from '@/lib/paystack';
 
 export const GET = handler(async (request) => {
@@ -78,6 +80,20 @@ export const GET = handler(async (request) => {
       membershipDate: new Date(),
       membershipRef: ref,
     });
+  }
+
+  // ── Credit partner markup earnings ──────────────────────────────
+  if (payment.schoolId && typeof payment.schoolMarkup === 'number' && payment.schoolMarkup > 0) {
+    await School.updateOne(
+      { _id: payment.schoolId },
+      { $inc: { pendingPayout: payment.schoolMarkup, totalEarnings: payment.schoolMarkup } },
+    );
+  }
+  if (payment.communityId && typeof payment.communityMarkup === 'number' && payment.communityMarkup > 0) {
+    await Community.updateOne(
+      { _id: payment.communityId },
+      { $inc: { pendingPayout: payment.communityMarkup, totalEarnings: payment.communityMarkup } },
+    );
   }
 
   return success({ status: 'success' });

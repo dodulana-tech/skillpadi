@@ -4,9 +4,12 @@ import dbConnect from '@/lib/db';
 import { Product } from '@/models/Shop';
 import '@/models/Category'; // register Category for populate
 
-export const GET = handler(async () => {
+export const GET = handler(async (request) => {
   await dbConnect();
-  const products = await Product.find({ inStock: true })
+  const { searchParams } = new URL(request.url);
+  const all = searchParams.get('all') === 'true';
+  const filter = all ? {} : { inStock: true };
+  const products = await Product.find(filter)
     .populate('categoryId', 'name slug icon color')
     .sort({ order: 1, name: 1 })
     .lean();

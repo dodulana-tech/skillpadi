@@ -47,7 +47,7 @@ function LoginForm() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-extrabold ${isAdminRoute ? 'bg-gradient-to-br from-slate-800 to-slate-600' : 'bg-gradient-to-br from-teal-primary to-teal-light'}`}>SP</div>
+            <img src="/logomark.svg" alt="SkillPadi" className="w-10 h-10" />
             <span className={`font-serif text-xl ${isAdminRoute ? 'text-slate-800' : 'text-teal-primary'}`}>SkillPadi</span>
           </Link>
           <h1 className="font-serif text-2xl mt-4">{isAdminRoute ? 'Admin Login' : 'Welcome back'}</h1>

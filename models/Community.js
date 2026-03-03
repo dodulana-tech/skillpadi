@@ -1,5 +1,10 @@
 import mongoose from 'mongoose';
 
+// Force re-registration if schema changed
+if (mongoose.models.Community) {
+  delete mongoose.models.Community;
+}
+
 const CommunitySchema = new mongoose.Schema({
   name: { type: String, required: true },
   slug: { type: String, required: true, unique: true },
@@ -9,35 +14,36 @@ const CommunitySchema = new mongoose.Schema({
     default: 'estate',
   },
 
-  // Contact
   contactName: String,
-  contactRole: String,  // e.g., "Estate Manager", "Residents' Association Chair"
+  contactRole: String,
   email: String,
   phone: String,
 
-  // Location
-  area: String,         // e.g., "Maitama", "Gwarinpa"
+  area: String,
   address: String,
+  city: { type: String, enum: ['abuja', 'lagos'], default: 'abuja' },
 
-  // Facilities available
-  facilities: [{
-    type: { type: String },  // 'pool', 'court', 'field', 'hall', 'garden'
-    name: String,
-    notes: String,
+  facilities: [String],
+
+  defaultMarkupPercent: { type: Number, default: 10, min: 0, max: 30 },
+  programMarkups: [{
+    programId: { type: mongoose.Schema.Types.ObjectId, ref: 'Program' },
+    markupPercent: Number,
+    customPrice: Number,
+    isActive: { type: Boolean, default: true },
   }],
-
-  // Commercial
-  marginPercent: { type: Number, default: 10 },  // SkillPadi margin on programs run here
-  residentDiscount: { type: Number, default: 0 }, // % discount for residents
+  residentDiscount: { type: Number, default: 5 },
+  venueProvided: { type: Boolean, default: true },
+  venueFee: { type: Number, default: 0 },
+  totalEarnings: { type: Number, default: 0 },
+  pendingPayout: { type: Number, default: 0 },
   estimatedHouseholds: Number,
   estimatedKids: Number,
 
-  // Status
+  status: { type: String, enum: ['pending', 'approved', 'rejected', 'suspended'], default: 'pending' },
   isActive: { type: Boolean, default: true },
-  partnerSince: Date,
   notes: String,
 
-  // Programs running at this community
   programIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Program' }],
 }, {
   timestamps: true,
@@ -45,4 +51,4 @@ const CommunitySchema = new mongoose.Schema({
 
 CommunitySchema.index({ area: 1, isActive: 1 });
 
-export default mongoose.models.Community || mongoose.model('Community', CommunitySchema);
+export default mongoose.model('Community', CommunitySchema);

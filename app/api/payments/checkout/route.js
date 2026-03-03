@@ -89,7 +89,7 @@ export const POST = handler(async (request) => {
   }
 
   // Create payment record
-  const payment = await Payment.create({
+  const paymentDoc = {
     userId: auth.dbUser._id,
     reference,
     amount: subtotal,
@@ -105,7 +105,22 @@ export const POST = handler(async (request) => {
       childAge: body.childAge,
       programId: body.programId,
     },
-  });
+  };
+
+  // School revenue split
+  if (body.schoolId && typeof body.schoolMarkup === 'number' && body.schoolMarkup > 0) {
+    paymentDoc.schoolId = body.schoolId;
+    paymentDoc.schoolMarkup = body.schoolMarkup;
+    paymentDoc.baseAmount = subtotal - body.schoolMarkup;
+  }
+  // Community revenue split
+  if (!body.schoolId && body.communityId && typeof body.communityMarkup === 'number' && body.communityMarkup > 0) {
+    paymentDoc.communityId = body.communityId;
+    paymentDoc.communityMarkup = body.communityMarkup;
+    if (!paymentDoc.baseAmount) paymentDoc.baseAmount = subtotal - body.communityMarkup;
+  }
+
+  const payment = await Payment.create(paymentDoc);
 
   // Initialize Paystack
   let paystackData;

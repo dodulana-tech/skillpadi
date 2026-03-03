@@ -9,10 +9,16 @@ export const GET = handler(async (request) => {
   if (isAuthError(auth)) return auth;
   await dbConnect();
 
+  const { searchParams } = new URL(request.url);
   const filter = {};
   if (auth.dbUser.role === 'school') filter._id = auth.dbUser.schoolId;
+  if (searchParams.get('status') && auth.dbUser.role === 'admin') filter.status = searchParams.get('status');
 
-  const schools = await School.find(filter).sort({ name: 1 }).lean();
+  const schools = await School.find(filter)
+    .populate('interestedCategories', 'name icon color')
+    .populate('approvedBy', 'name')
+    .sort({ createdAt: -1 })
+    .lean();
   const enriched = await Promise.all(schools.map(async (school) => {
     const activeStudents = await Enrollment.countDocuments({ schoolId: school._id, status: 'active' });
     return { ...school, activeStudents };

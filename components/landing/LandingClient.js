@@ -359,6 +359,26 @@ export function LandingClient({ categories, coaches, programs }) {
       {/* ── Leaderboard Teaser ── */}
       <LeaderboardTeaser />
 
+      {/* ── For Schools CTA ── */}
+      <section className="py-10 px-5">
+        <div className="max-w-xl mx-auto bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-7 text-white text-center shadow-xl">
+          <div className="text-3xl mb-3">🏫</div>
+          <h2 className="font-serif text-xl mb-2">Are you a school?</h2>
+          <p className="text-slate-300 text-sm mb-5 leading-relaxed">
+            Partner with SkillPadi for structured P.E. and extracurricular programs.
+            Vetted coaches, progress tracking, parent engagement — all managed for you.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <a href="/schools/apply" className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-teal-primary text-white text-sm font-semibold rounded-xl hover:bg-teal-600 transition-colors">
+              Apply Now →
+            </a>
+            <a href="/school" className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-white/10 text-white text-sm font-semibold rounded-xl hover:bg-white/20 transition-colors border border-white/20">
+              School Portal Login
+            </a>
+          </div>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="py-4 px-5 border-t border-slate-200/60 text-center">
         <p className="text-[8px] text-slate-400">© 2025 SkillPadi · Abuja · VAT 7.5%</p>

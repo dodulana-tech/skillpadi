@@ -12,6 +12,7 @@ const TABS = [
   { id: 'students', label: 'Students', icon: '🎓' },
   { id: 'invite', label: 'Invite Parents', icon: '🔗' },
   { id: 'programs', label: 'Programs', icon: '📋' },
+  { id: 'pricing', label: 'Pricing', icon: '💰' },
 ];
 
 const EMPTY_STUDENT = { childName: '', childAge: '', programId: '', parentEmail: '' };
@@ -32,6 +33,13 @@ export default function SchoolDashboard() {
   const [studentForm, setStudentForm] = useState(EMPTY_STUDENT);
   const [savingStudent, setSavingStudent] = useState(false);
 
+  // Pricing tab
+  const [pricingData, setPricingData] = useState(null); // { pricing[], defaultMarkupPercent, totalEarnings, pendingPayout }
+  const [defaultMarkup, setDefaultMarkup] = useState(15);
+  const [programMarkups, setProgramMarkups] = useState({}); // { [programId]: markupPercent }
+  const [savingMarkup, setSavingMarkup] = useState(false);
+  const [requestingPayout, setRequestingPayout] = useState(false);
+
   // ── Auth guard ──────────────────────────────────────────────────
   useEffect(() => {
     if (!loading && !isAuthenticated) router.push('/auth/login');
@@ -45,10 +53,12 @@ export default function SchoolDashboard() {
     if (!isAuthenticated) return;
     setLoadingData(true);
     try {
-      const [enrRes, progRes, invRes] = await Promise.all([
+      const schoolId = dbUser?.schoolId;
+      const [enrRes, progRes, invRes, priceRes] = await Promise.all([
         authFetch('/api/enrollments'),
         authFetch('/api/programs?limit=100'),
         authFetch('/api/invites?type=school'),
+        schoolId ? authFetch(`/api/schools/${schoolId}/pricing`) : Promise.resolve(null),
       ]);
       if (enrRes.ok) {
         const d = await enrRes.json();
@@ -61,6 +71,16 @@ export default function SchoolDashboard() {
       if (invRes.ok) {
         const d = await invRes.json();
         setInvites(d.invites || []);
+      }
+      if (priceRes?.ok) {
+        const d = await priceRes.json();
+        setPricingData(d);
+        setDefaultMarkup(d.defaultMarkupPercent ?? 15);
+        const overrides = {};
+        (d.pricing || []).forEach(p => {
+          overrides[p.programId] = p.markupPercent ?? d.defaultMarkupPercent ?? 15;
+        });
+        setProgramMarkups(overrides);
       }
     } catch (e) {
       console.error(e);
@@ -170,6 +190,40 @@ export default function SchoolDashboard() {
   };
 
   const setF = (field) => (e) => setStudentForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  const saveMarkupSettings = async () => {
+    const schoolId = dbUser?.schoolId;
+    if (!schoolId) return;
+    setSavingMarkup(true);
+    const programMarkupArray = Object.entries(programMarkups).map(([programId, markupPercent]) => ({
+      programId,
+      markupPercent: Number(markupPercent),
+    }));
+    const res = await authFetch(`/api/schools/${schoolId}/pricing`, {
+      method: 'PATCH',
+      body: JSON.stringify({ defaultMarkupPercent: defaultMarkup, programMarkups: programMarkupArray }),
+    });
+    if (res.ok) {
+      toast.success('Pricing settings saved!');
+      await loadData();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      toast.error(d.error || 'Failed to save pricing');
+    }
+    setSavingMarkup(false);
+  };
+
+  const requestPayout = async () => {
+    const schoolId = dbUser?.schoolId;
+    if (!schoolId) return;
+    setRequestingPayout(true);
+    const pending = pricingData?.pendingPayout || 0;
+    const msg = encodeURIComponent(
+      `Hi SkillPadi! ${schoolName} is requesting a payout of ₦${pending.toLocaleString()} in school markup earnings. Please process at your earliest convenience.`
+    );
+    window.open(`https://wa.me/${process.env.NEXT_PUBLIC_WA_BUSINESS || ''}?text=${msg}`, '_blank');
+    setRequestingPayout(false);
+  };
 
   // ── Stats ─────────────────────────────────────────────────────
   const activeCount = enrollments.filter((e) => e.status === 'active').length;
@@ -450,6 +504,117 @@ export default function SchoolDashboard() {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── PRICING TAB ──────────────────────────────────────── */}
+        {tab === 'pricing' && (
+          <div>
+            {/* Earnings summary */}
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              <div className="card p-4">
+                <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1">Total Earned</div>
+                <div className="font-serif text-xl text-teal-primary">{fmt(pricingData?.totalEarnings || 0)}</div>
+                <div className="text-[9px] text-slate-400 mt-0.5">cumulative markup earnings</div>
+              </div>
+              <div className="card p-4">
+                <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1">Pending Payout</div>
+                <div className="font-serif text-xl text-amber-600">{fmt(pricingData?.pendingPayout || 0)}</div>
+                <button
+                  onClick={requestPayout}
+                  disabled={requestingPayout || !pricingData?.pendingPayout}
+                  className="mt-2 text-[9px] font-semibold text-teal-primary border border-teal-primary/30 rounded-lg px-2 py-1 hover:bg-teal-primary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Request Payout via WhatsApp
+                </button>
+              </div>
+            </div>
+
+            {/* Default markup stepper */}
+            <div className="card p-5 mb-4">
+              <div className="font-bold text-sm mb-0.5">Default Markup</div>
+              <div className="text-[10px] text-slate-400 mb-4">
+                This percentage is added to SkillPadi&apos;s base price for all programmes.
+                You can override per programme below.
+              </div>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setDefaultMarkup(m => Math.max(0, m - 5))}
+                  className="w-9 h-9 rounded-full border border-slate-200 text-slate-600 font-bold text-lg hover:bg-slate-50 flex items-center justify-center"
+                >−</button>
+                <div className="text-center">
+                  <div className="font-serif text-3xl text-teal-primary">{defaultMarkup}%</div>
+                  <div className="text-[9px] text-slate-400">markup on base price</div>
+                </div>
+                <button
+                  onClick={() => setDefaultMarkup(m => Math.min(50, m + 5))}
+                  className="w-9 h-9 rounded-full border border-slate-200 text-slate-600 font-bold text-lg hover:bg-slate-50 flex items-center justify-center"
+                >+</button>
+              </div>
+            </div>
+
+            {/* Per-programme pricing table */}
+            {pricingData?.pricing?.length > 0 && (
+              <div className="card overflow-hidden mb-4">
+                <div className="p-4 border-b border-slate-100">
+                  <div className="font-bold text-sm">Per-Programme Pricing</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Set custom markup per programme, or leave at default</div>
+                </div>
+                <div className="overflow-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50">
+                        <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Programme</th>
+                        <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">SkillPadi Base</th>
+                        <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Your Markup</th>
+                        <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Parent Pays</th>
+                        <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">You Earn/Child</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pricingData.pricing.map(p => {
+                        const markup = programMarkups[p.programId] ?? defaultMarkup;
+                        const parentPerSession = Math.round(p.basePricePerSession * (1 + markup / 100));
+                        const parentTotal = parentPerSession * p.sessions;
+                        const earnPerChild = (parentPerSession - p.basePricePerSession) * p.sessions;
+                        return (
+                          <tr key={p.programId} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
+                            <td className="p-3">
+                              <div className="font-semibold">{p.categoryIcon} {p.programName}</div>
+                              <div className="text-[9px] text-slate-400">{p.sessions} sessions</div>
+                            </td>
+                            <td className="p-3 text-slate-600">{fmt(p.baseTotalPrice)}</td>
+                            <td className="p-3">
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={50}
+                                  value={markup}
+                                  onChange={e => setProgramMarkups(prev => ({ ...prev, [p.programId]: Math.min(50, Math.max(0, Number(e.target.value))) }))}
+                                  className="w-14 border border-slate-200 rounded px-1.5 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-teal-primary/30"
+                                />
+                                <span className="text-slate-400">%</span>
+                              </div>
+                            </td>
+                            <td className="p-3 font-semibold text-slate-700">{fmt(parentTotal)}</td>
+                            <td className="p-3 text-teal-primary font-semibold">{fmt(earnPerChild)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={saveMarkupSettings}
+              disabled={savingMarkup}
+              className="btn-primary btn-sm disabled:opacity-60"
+            >
+              {savingMarkup ? 'Saving…' : 'Save Pricing Settings'}
+            </button>
           </div>
         )}
 

@@ -18,7 +18,12 @@ export const GET = handler(async (request) => {
   if (auth.dbUser.role === 'parent') {
     filter.userId = auth.dbUser._id;
   } else if (auth.dbUser.role === 'school') {
+    // School sees ONLY their own students — never fall through to all enrollments
+    if (!auth.dbUser.schoolId) return success({ enrollments: [] });
     filter.schoolId = auth.dbUser.schoolId;
+  } else if (auth.dbUser.role !== 'admin') {
+    // Any other unrecognised role gets nothing
+    return success({ enrollments: [] });
   }
   // Admin sees all
 
