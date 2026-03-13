@@ -5,6 +5,8 @@ import Payment from '@/models/Payment';
 import User from '@/models/User';
 import Enrollment from '@/models/Enrollment';
 import Program from '@/models/Program';
+import Donation from '@/models/Donation';
+import ImpactProgram from '@/models/ImpactProgram';
 import { notifyPaymentReceived } from '@/lib/whatsapp';
 
 export const runtime = 'nodejs';
@@ -40,6 +42,14 @@ export async function POST(request) {
     const original = await Payment.findOne({ reference: data.reference, status: 'pending' }).lean();
     if (!original) return NextResponse.json({ received: true });
 
+    // CRITICAL: Verify amount matches what we expected (prevent amount tampering)
+    const expectedAmountKobo = Math.round(original.totalAmount * 100);
+    const paidAmountKobo = data.amount;
+    if (paidAmountKobo < expectedAmountKobo) {
+      console.error(`[Webhook] Amount mismatch: expected ${expectedAmountKobo} kobo, got ${paidAmountKobo} kobo for ref ${data.reference}`);
+      return NextResponse.json({ received: true });
+    }
+
     // Now update — MERGE webhookData, don't overwrite
     const payment = await Payment.findOneAndUpdate(
       { _id: original._id, status: 'pending' },
@@ -71,6 +81,23 @@ export async function POST(request) {
             membershipDate: new Date(),
             membershipRef: data.reference,
           });
+        }
+
+        if (item.type === 'impact-donation' && item.programId && item.amount) {
+          try {
+            await Donation.create({
+              donorName: 'SkillPadi Parent',
+              amount: item.amount,
+              programId: item.programId,
+              paymentReference: data.reference,
+              paymentStatus: 'success',
+              type: 'parent-crosssubsidy',
+            });
+            await ImpactProgram.updateOne(
+              { _id: item.programId },
+              { $inc: { fundedAmount: item.amount } },
+            );
+          } catch (e) { console.error('[Webhook] Impact donation error:', e.message); }
         }
 
         if (item.type === 'enrollment' && programId) {

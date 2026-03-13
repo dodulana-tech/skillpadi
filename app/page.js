@@ -16,7 +16,7 @@ async function getData() {
       .lean(),
     Program.find({ isActive: true })
       .populate('categoryId', 'name slug icon color sponsor')
-      .populate('coachId', 'name slug initials shieldLevel rating whatsapp')
+      .populate('coachId', 'name slug initials shieldLevel rating')
       .sort({ categoryId: 1, name: 1 })
       .lean(),
   ]);

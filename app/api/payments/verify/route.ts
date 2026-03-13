@@ -6,6 +6,8 @@ import Payment from '@/models/Payment';
 import Program from '@/models/Program';
 import Enrollment from '@/models/Enrollment';
 import User from '@/models/User';
+import Donation from '@/models/Donation';
+import ImpactProgram from '@/models/ImpactProgram';
 import { verifyPayment } from '@/lib/paystack';
 
 export const GET = handler(async (request) => {
@@ -34,6 +36,14 @@ export const GET = handler(async (request) => {
     return success({ status: verification.status });
   }
 
+  // CRITICAL: Verify amount matches what we expected (prevent amount tampering)
+  const expectedAmountKobo = Math.round(payment.totalAmount * 100);
+  const paidAmountKobo = verification.amount;
+  if (paidAmountKobo < expectedAmountKobo) {
+    console.error(`[Verify] Amount mismatch: expected ${expectedAmountKobo} kobo, got ${paidAmountKobo} kobo for ref ${ref}`);
+    return error('Payment amount does not match', 400);
+  }
+
   // Update payment — MERGE, don't overwrite webhookData
   await Payment.updateOne({ _id: payment._id }, {
     status: 'success',
@@ -56,6 +66,22 @@ export const GET = handler(async (request) => {
           membershipDate: new Date(),
           membershipRef: ref,
         });
+      }
+      if (item.type === 'impact-donation' && item.programId && item.amount) {
+        try {
+          await Donation.create({
+            donorName: 'SkillPadi Parent',
+            amount: item.amount,
+            programId: item.programId,
+            paymentReference: ref,
+            paymentStatus: 'success',
+            type: 'parent-crosssubsidy',
+          });
+          await ImpactProgram.updateOne(
+            { _id: item.programId },
+            { $inc: { fundedAmount: item.amount } },
+          );
+        } catch (e) { console.error('[Verify] Impact donation error:', e.message); }
       }
       if (item.type === 'enrollment' && programId) {
         // Check duplicate — include childName so siblings in same program work

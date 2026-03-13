@@ -35,6 +35,8 @@ export default function EnrollmentCheckout({ program, onClose }) {
   const [paying, setPaying] = useState(false);
   const [schoolPricing, setSchoolPricing] = useState(null); // { parentTotalPrice, schoolMarkup, schoolId }
   const [communityPricing, setCommunityPricing] = useState(null); // { residentTotalPrice, ... }
+  const [impactDonation, setImpactDonation] = useState(0);
+  const [impactProgram, setImpactProgram] = useState(null);
 
   const savedChildren = dbUser?.children || [];
   const hasChildren = savedChildren.length > 0;
@@ -88,6 +90,20 @@ export default function EnrollmentCheckout({ program, onClose }) {
       } catch { /* ignore */ }
     })();
   }, [dbUser?.communityId, program._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch active Impact program for cross-subsidy
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/impact/programs');
+        if (res.ok) {
+          const data = await res.json();
+          const active = (data.programs || []).find(p => p.status === 'funding');
+          if (active) setImpactProgram(active);
+        }
+      } catch { /* ignore */ }
+    })();
+  }, []);
 
   // Fetch matching starter kit
   useEffect(() => {
@@ -155,7 +171,7 @@ export default function EnrollmentCheckout({ program, onClose }) {
   const effectivePricePerSession = schoolPricing?.parentPricePerSession ?? communityPricing?.residentPricePerSession ?? program.pricePerSession;
   const subtotal = effectiveProgramTotal + kitPrice + membershipPrice;
   const vat = Math.round(subtotal * VAT_RATE);
-  const total = subtotal + vat;
+  const total = subtotal + vat + impactDonation;
   const spots = program.spotsTotal - program.spotsTaken;
 
   const handleContinueFromStep1 = async () => {
@@ -205,6 +221,9 @@ export default function EnrollmentCheckout({ program, onClose }) {
       }
       if (needsMembership) {
         items.push({ type: 'membership', amount: MEMBERSHIP_FEE, label: 'SkillPadi Membership' });
+      }
+      if (impactDonation > 0 && impactProgram) {
+        items.push({ type: 'impact-donation', amount: impactDonation, programId: impactProgram._id, label: `Impact: ${impactProgram.name}` });
       }
 
       const checkoutPayload = {
@@ -503,6 +522,33 @@ export default function EnrollmentCheckout({ program, onClose }) {
                   <div className="text-[10px] text-slate-400">One-time — unlocks all programs</div>
                 </div>
                 <span className="font-semibold">{fmt(MEMBERSHIP_FEE)}</span>
+              </div>
+            )}
+
+            {/* Impact cross-subsidy */}
+            {impactProgram && (
+              <div className="rounded-xl border border-teal-200 bg-teal-50/50 p-3 my-1">
+                <div className="text-[11px] font-semibold text-teal-800 mb-1.5">
+                  Help a child in {impactProgram.community || 'an underserved community'} learn {impactProgram.categoryId?.name || 'a skill'} too
+                </div>
+                <div className="flex gap-1.5 flex-wrap mb-2">
+                  {[2500, 5000, 15000].map(amt => (
+                    <button
+                      key={amt}
+                      onClick={() => setImpactDonation(impactDonation === amt ? 0 : amt)}
+                      className={`px-3 py-1 rounded-lg text-[10px] font-semibold transition-colors ${impactDonation === amt ? 'bg-teal-600 text-white' : 'bg-white border border-teal-200 text-teal-700 hover:bg-teal-100'}`}
+                    >
+                      {fmt(amt)}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-[9px] text-teal-600">100% goes to SkillPadi Impact</div>
+                {impactDonation > 0 && (
+                  <div className="flex justify-between text-xs mt-2 pt-2 border-t border-teal-200">
+                    <span className="text-teal-700 font-semibold">Impact donation</span>
+                    <span className="text-teal-700 font-semibold">{fmt(impactDonation)}</span>
+                  </div>
+                )}
               </div>
             )}
 

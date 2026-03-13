@@ -50,11 +50,11 @@ export default function PartnersPage() {
             You provide the venue and the community — and earn a revenue share on every enrollment.
           </p>
           <div className="flex gap-3 justify-center flex-wrap">
-            <Link href="/schools/apply" className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:-translate-y-0.5 transition-all">
-              🏫 Apply as a School
+            <Link href="/schools/join" className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:-translate-y-0.5 transition-all">
+              🏫 Start a School Partnership
             </Link>
-            <Link href="/communities/apply" className="inline-flex items-center gap-2 px-6 py-3 bg-teal-600 text-white text-sm font-semibold rounded-xl hover:-translate-y-0.5 transition-all">
-              🏘️ Apply as an Estate
+            <Link href="/communities/join" className="inline-flex items-center gap-2 px-6 py-3 bg-teal-600 text-white text-sm font-semibold rounded-xl hover:-translate-y-0.5 transition-all">
+              🏘️ Bring SkillPadi to Your Estate
             </Link>
           </div>
         </div>
@@ -118,8 +118,8 @@ export default function PartnersPage() {
               <div className="font-semibold text-sm text-teal-900 mb-0.5">Ready to partner?</div>
               <p className="text-[11px] text-teal-700">Application takes under 5 minutes. We&apos;ll WhatsApp you within 24 hours.</p>
             </div>
-            <Link href="/schools/apply" className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white text-xs font-semibold rounded-xl whitespace-nowrap hover:-translate-y-0.5 transition-all">
-              Apply Now →
+            <Link href="/schools/join" className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white text-xs font-semibold rounded-xl whitespace-nowrap hover:-translate-y-0.5 transition-all">
+              Let&apos;s Go →
             </Link>
           </div>
         </div>
@@ -169,8 +169,8 @@ export default function PartnersPage() {
               <div className="font-semibold text-sm text-emerald-900 mb-0.5">Interested?</div>
               <p className="text-[11px] text-emerald-700">Apply online or WhatsApp us — we&apos;ll walk you through the setup.</p>
             </div>
-            <Link href="/communities/apply" className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-700 text-white text-xs font-semibold rounded-xl whitespace-nowrap hover:-translate-y-0.5 transition-all">
-              Apply Now →
+            <Link href="/communities/join" className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-700 text-white text-xs font-semibold rounded-xl whitespace-nowrap hover:-translate-y-0.5 transition-all">
+              Let&apos;s Go →
             </Link>
           </div>
         </div>
@@ -203,11 +203,11 @@ export default function PartnersPage() {
           <h2 className="font-serif text-[1.5rem] mb-2">Let&apos;s build this together</h2>
           <p className="text-slate-500 text-sm mb-6">Any questions before applying? Chat with us on WhatsApp — we respond fast.</p>
           <div className="flex gap-3 justify-center flex-wrap">
-            <Link href="/schools/apply" className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white text-xs font-semibold rounded-xl hover:-translate-y-0.5 transition-all">
-              🏫 School Application
+            <Link href="/schools/join" className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white text-xs font-semibold rounded-xl hover:-translate-y-0.5 transition-all">
+              🏫 Start School Partnership
             </Link>
-            <Link href="/communities/apply" className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-700 text-white text-xs font-semibold rounded-xl hover:-translate-y-0.5 transition-all">
-              🏘️ Estate Application
+            <Link href="/communities/join" className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-700 text-white text-xs font-semibold rounded-xl hover:-translate-y-0.5 transition-all">
+              🏘️ Bring SkillPadi to Your Estate
             </Link>
           </div>
         </div>

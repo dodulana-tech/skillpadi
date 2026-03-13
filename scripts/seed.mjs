@@ -28,6 +28,7 @@ const VettingItemSchema = new mongoose.Schema({
 const CoachSchema = new mongoose.Schema({
   name: String, slug: String, initials: String, title: String, bio: String,
   categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   whatsapp: String, city: { type: String, default: 'abuja' },
   vetting: {
     nin: VettingItemSchema, police: VettingItemSchema, address: VettingItemSchema,
@@ -42,6 +43,12 @@ const CoachSchema = new mongoose.Schema({
   testimonials: [{ parent: String, text: String, rating: Number }],
   qa: [{ question: String, answer: String }],
   isActive: { type: Boolean, default: true }, featuredOrder: Number,
+  coachTier: { type: String, default: 'partner' },
+  pricingModel: { type: String, default: 'platform-set' },
+  platformFeePercent: { type: Number, default: 15 },
+  personalRate: Number,
+  canCreatePrograms: { type: Boolean, default: false },
+  academyEnabled: { type: Boolean, default: false },
 }, { timestamps: true });
 
 const ProgramSchema = new mongoose.Schema({
@@ -75,6 +82,16 @@ const StarterKitSchema = new mongoose.Schema({
   brand: String, inStock: { type: Boolean, default: true }, sold: Number,
 }, { timestamps: true });
 
+const UserSchema = new mongoose.Schema({
+  firebaseUid: { type: String, required: true, unique: true },
+  email: String, name: String, phone: String,
+  role: { type: String, enum: ['parent', 'coach', 'school', 'community', 'admin'], default: 'parent' },
+  coachId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coach' },
+  membershipPaid: { type: Boolean, default: false },
+  children: [{ name: String, age: Number, gender: String }],
+  isActive: { type: Boolean, default: true },
+}, { timestamps: true });
+
 const SchoolSchema = new mongoose.Schema({
   name: String, slug: String, contactName: String, contactRole: String,
   email: String, phone: String, area: String,
@@ -99,14 +116,48 @@ const TournamentSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
 
+const ImpactProgramSchema = new mongoose.Schema({
+  name: String, slug: { type: String, unique: true }, description: String,
+  categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category' },
+  coachId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coach' },
+  proposedByCoachId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coach' },
+  community: String, city: String, venue: String, schedule: String, ageRange: String,
+  capacity: Number, enrolled: { type: Number, default: 0 },
+  costPerChild: Number, totalBudget: Number, fundedAmount: { type: Number, default: 0 },
+  budget: { equipment: Number, venue: Number, transport: Number, food: Number, stipend: Number, other: Number, total: Number },
+  coachDonatesTime: { type: Boolean, default: true }, coachStory: String,
+  status: { type: String, default: 'proposed' }, termWeeks: { type: Number, default: 12 },
+  sponsorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Sponsor' },
+}, { timestamps: true });
+
+const DonationSchema = new mongoose.Schema({
+  donorName: String, donorEmail: String, amount: { type: Number, required: true },
+  programId: { type: mongoose.Schema.Types.ObjectId, ref: 'ImpactProgram', required: true },
+  paymentReference: String, paymentStatus: { type: String, default: 'pending' },
+  isAnonymous: { type: Boolean, default: false }, message: String,
+  type: { type: String, default: 'individual' },
+}, { timestamps: true });
+
+const SponsorSchema = new mongoose.Schema({
+  name: { type: String, required: true }, slug: String,
+  type: { type: String, default: 'general' },
+  tier: String, isActive: { type: Boolean, default: true },
+  totalDonated: { type: Number, default: 0 },
+  programIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'ImpactProgram' }],
+}, { timestamps: true });
+
 const Category = mongoose.model('Category', CategorySchema);
 const Coach = mongoose.model('Coach', CoachSchema);
 const Program = mongoose.model('Program', ProgramSchema);
 const Product = mongoose.model('Product', ProductSchema);
 const StarterKit = mongoose.model('StarterKit', StarterKitSchema);
+const User = mongoose.model('User', UserSchema);
 const School = mongoose.model('School', SchoolSchema);
 const Achievement = mongoose.model('Achievement', AchievementSchema);
 const Tournament = mongoose.model('Tournament', TournamentSchema);
+const ImpactProgram = mongoose.model('ImpactProgram', ImpactProgramSchema);
+const Donation = mongoose.model('Donation', DonationSchema);
+const Sponsor = mongoose.model('Sponsor', SponsorSchema);
 
 // ── Vetting helper ──
 const v = (status = 'verified', note = '', date = '2025-01-10', expires = null) => ({
@@ -122,6 +173,7 @@ async function seed() {
     Category.deleteMany(), Coach.deleteMany(), Program.deleteMany(),
     Product.deleteMany(), StarterKit.deleteMany(), School.deleteMany(),
     Achievement.deleteMany(), Tournament.deleteMany(),
+    ImpactProgram.deleteMany(), Donation.deleteMany(), Sponsor.deleteMany(),
   ]);
   console.log('🗑️  Cleared existing data');
 
@@ -277,6 +329,127 @@ async function seed() {
     { name: 'Chess Masterclass with Tunde Onakoya', slug: 'chess-masterclass-lagos', categoryId: lagosChessCat._id, coachId: (await Coach.findOne({ slug: 'coach-tunde-chess' }))._id, ageRange: '7-16', ageMin: 7, ageMax: 16, location: 'Lekki Phase 1, Lagos', schedule: 'TBD', duration: 90, sessions: 4, groupSize: '4-8 kids', pricePerSession: 25000, supervision: 'drop-off', spotsTotal: 50, spotsTaken: 0, city: 'lagos', isActive: false },
   ]);
   console.log('📦 Lagos placeholder data added');
+
+  // ── Coach tier updates ──
+  await Coach.updateMany({}, { coachTier: 'partner' }); // default all to partner
+  const amaka = await Coach.findOne({ slug: /amaka|obi/i });
+  if (amaka) { amaka.coachTier = 'independent'; amaka.personalRate = 25000; amaka.canCreatePrograms = true; amaka.platformFeePercent = 15; await amaka.save(); }
+  const chinedu = await Coach.findOne({ slug: /chinedu|chukwu/i });
+  if (chinedu) { chinedu.coachTier = 'master'; chinedu.personalRate = 15000; chinedu.canCreatePrograms = true; chinedu.academyEnabled = true; chinedu.platformFeePercent = 10; await chinedu.save(); }
+  console.log('📦 Coach tiers updated');
+
+  // ── Dev test coach users ──
+  // These use fake firebaseUids. To test the coach portal:
+  // 1. Sign up via the app (creates a real Firebase user)
+  // 2. In mongosh, run: db.users.updateOne({ email: 'your@email.com' }, { $set: { role: 'coach', coachId: db.coaches.findOne({ slug: 'coach-amaka' })._id } })
+  // OR: Replace the firebaseUid below with your real Firebase UID after signing up.
+  const testCoachUsers = [
+    { firebaseUid: 'dev-coach-amaka-uid', email: 'amaka@skillpadi.dev', name: 'Coach Amaka Obi', role: 'coach', coachId: chm['coach-amaka'] },
+    { firebaseUid: 'dev-coach-chukwu-uid', email: 'chinedu@skillpadi.dev', name: 'Master Chinedu Chukwu', role: 'coach', coachId: chm['master-chukwu'] },
+    { firebaseUid: 'dev-coach-bayo-uid', email: 'bayo@skillpadi.dev', name: 'Coach Bayo Adeyemi', role: 'coach', coachId: chm['coach-bayo'] },
+  ];
+  for (const u of testCoachUsers) {
+    await User.findOneAndUpdate({ firebaseUid: u.firebaseUid }, u, { upsert: true });
+    await Coach.updateOne({ _id: u.coachId }, { userId: (await User.findOne({ firebaseUid: u.firebaseUid }))._id });
+  }
+  console.log(`📦 ${testCoachUsers.length} dev coach users created (replace firebaseUid to test)`);
+
+  // ── Holiday intensive programs ──
+  const intensiveCategory1 = cats.find(c => c.slug === 'swimming');
+  const intensiveCategory2 = cats.find(c => c.slug === 'football');
+  const coach1 = coaches[0];
+  const coach2 = coaches[1] || coaches[0];
+
+  if (intensiveCategory1 && coach1) {
+    await Program.create({
+      name: 'Swimming Bootcamp — Easter',
+      slug: 'swimming-bootcamp-easter-2026',
+      categoryId: intensiveCategory1._id,
+      coachId: coach1._id,
+      ageRange: '4-10', ageMin: 4, ageMax: 10,
+      location: 'Transcorp Hilton Pool',
+      schedule: 'Mon-Fri, 9:00 AM - 12:00 PM',
+      duration: 180, sessions: 5, groupSize: '6-12 kids',
+      pricePerSession: 24000,
+      supervision: 'parent-present',
+      spotsTotal: 12, spotsTaken: 0,
+      city: 'abuja', isActive: true,
+      isEvent: true,
+      eventDate: { start: new Date('2026-04-14'), end: new Date('2026-04-18') },
+      hoursPerDay: 3,
+      earlyBirdDeadline: new Date('2026-03-31'),
+      earlyBirdDiscount: 10,
+      milestones: ['Water Comfort', 'Basic Strokes', 'Endurance Swim'],
+      highlights: ['5-day intensive', 'Small group (max 12)', 'Certificate on completion'],
+      termName: 'Easter 2026',
+    });
+  }
+
+  if (intensiveCategory2 && coach2) {
+    await Program.create({
+      name: 'Football Skills Camp — Easter',
+      slug: 'football-skills-camp-easter-2026',
+      categoryId: intensiveCategory2._id,
+      coachId: coach2._id,
+      ageRange: '5-12', ageMin: 5, ageMax: 12,
+      location: 'Jabi Lake Turf',
+      schedule: 'Mon-Fri, 8:00 AM - 11:00 AM',
+      duration: 180, sessions: 5, groupSize: '10-20 kids',
+      pricePerSession: 16000,
+      supervision: 'drop-off',
+      spotsTotal: 20, spotsTaken: 0,
+      city: 'abuja', isActive: true,
+      isEvent: true,
+      eventDate: { start: new Date('2026-04-14'), end: new Date('2026-04-18') },
+      hoursPerDay: 3,
+      earlyBirdDeadline: new Date('2026-03-31'),
+      earlyBirdDiscount: 15,
+      milestones: ['Ball Control', 'Passing Accuracy', 'Match Play'],
+      highlights: ['5-day camp', 'Skills assessment', 'Tournament on last day'],
+      termName: 'Easter 2026',
+    });
+  }
+  console.log('📦 Holiday intensive programs added');
+
+  // ── Impact program + donations ──
+  const impactProgram = await ImpactProgram.create({
+    name: 'Chess in Ajegunle',
+    slug: 'chess-ajegunle',
+    community: 'Ajegunle',
+    city: 'lagos',
+    venue: 'Community Centre, Ajegunle',
+    schedule: 'Saturdays, 10AM - 12PM',
+    ageRange: '6-14',
+    capacity: 50,
+    totalBudget: 805000,
+    budget: { equipment: 85000, venue: 0, transport: 0, food: 600000, stipend: 120000, other: 0, total: 805000 },
+    costPerChild: 16100,
+    fundedAmount: 45000,
+    status: 'funding',
+    termWeeks: 12,
+    coachDonatesTime: false,
+    coachStory: "I grew up in Ajegunle. These children deserve the same chance I got.",
+    categoryId: lagosChessCat._id,
+    coachId: coaches[0]?._id,
+    proposedByCoachId: coaches[0]?._id,
+  });
+
+  if (impactProgram) {
+    await Donation.create([
+      { donorName: 'Funke Adeyemi', amount: 15000, programId: impactProgram._id, type: 'individual', paymentStatus: 'success', paymentReference: 'DON-SEED-001' },
+      { donorName: 'Anonymous', amount: 25000, programId: impactProgram._id, isAnonymous: true, paymentStatus: 'success', paymentReference: 'DON-SEED-002' },
+      { donorName: 'Bayo Ogunlesi', amount: 5000, programId: impactProgram._id, paymentStatus: 'success', paymentReference: 'DON-SEED-003', message: 'For the children!' },
+    ]);
+  }
+  console.log('📦 Impact program + donations seeded');
+
+  // ── Sponsor ──
+  await Sponsor.findOneAndUpdate(
+    { name: 'SkillPadi Foundation' },
+    { name: 'SkillPadi Foundation', slug: 'skillpadi-foundation', type: 'foundation', tier: 'founding-partner', isActive: true },
+    { upsert: true }
+  );
+  console.log('📦 Sponsor seeded');
 
   console.log('\n🎉 Seed complete! SkillPadi database ready.');
   await mongoose.disconnect();

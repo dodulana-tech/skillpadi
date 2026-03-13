@@ -20,7 +20,7 @@ export const GET = handler(async (request) => {
 
   const programs = await Program.find(filter)
     .populate('categoryId', 'name slug icon color sponsor')
-    .populate('coachId', 'name slug initials shieldLevel rating whatsapp')
+    .populate('coachId', 'name slug initials shieldLevel rating')
     .populate('starterKitId', 'name kitPrice icon')
     .sort({ categoryId: 1, name: 1 })
     .lean();

@@ -33,6 +33,11 @@ const PaymentSchema = new mongoose.Schema({
   communityMarkup: Number, // community/estate's earning
   communityId: { type: mongoose.Schema.Types.ObjectId, ref: 'Community' },
 
+  // Coach earnings split
+  coachEarnings: Number,
+  platformFee: Number,
+  coachId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coach' },
+
   // Linked entities
   enrollmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enrollment' },
   orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },

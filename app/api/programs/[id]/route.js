@@ -9,7 +9,7 @@ export const GET = handler(async (request, { params }) => {
   await dbConnect();
   const program = await Program.findOne(isObjectIdOrSlug(id))
     .populate('categoryId', 'name slug icon color sponsor')
-    .populate('coachId', 'name slug initials shieldLevel rating reviewCount whatsapp bio yearsExperience ageGroups')
+    .populate('coachId', 'name slug initials shieldLevel rating reviewCount bio yearsExperience ageGroups')
     .populate('starterKitId')
     .lean();
   if (!program) return error('Program not found', 404);

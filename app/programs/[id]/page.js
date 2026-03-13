@@ -38,7 +38,7 @@ async function getProgramData(id) {
     id.match(/^[0-9a-fA-F]{24}$/) ? { _id: id } : { slug: id },
   )
     .populate('categoryId')
-    .populate('coachId', 'name slug initials shieldLevel rating reviewCount whatsapp bio yearsExperience ageGroups categoryId')
+    .populate('coachId', 'name slug initials shieldLevel rating reviewCount bio yearsExperience ageGroups categoryId')
     .lean();
 
   if (!program) return null;

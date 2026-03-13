@@ -12,7 +12,7 @@ export default function Navbar() {
   const dropRef = useRef(null);
   const partnerRef = useRef(null);
 
-  const dashLink = isAdmin ? '/admin' : dbUser?.role === 'school' ? '/dashboard/school' : dbUser?.role === 'community' ? '/dashboard/community' : '/dashboard/parent';
+  const dashLink = isAdmin ? '/admin' : dbUser?.role === 'coach' ? '/dashboard/coach' : dbUser?.role === 'school' ? '/dashboard/school' : dbUser?.role === 'community' ? '/dashboard/community' : '/dashboard/parent';
 
   useEffect(() => {
     function handleClick(e) {
@@ -43,7 +43,7 @@ export default function Navbar() {
           <Link href="/#programs" className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-800 transition-colors">Programs</Link>
           <Link href="/#coaches" className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-800 transition-colors">Coaches</Link>
           <Link href="/shop" className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-800 transition-colors">Shop</Link>
-          <Link href="/about" className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-800 transition-colors">About</Link>
+          <Link href="/impact" className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-800 transition-colors">Impact</Link>
 
           {/* Partner dropdown */}
           <div className="relative" ref={partnerRef}>
@@ -63,14 +63,14 @@ export default function Navbar() {
                     <div className="text-[9px] text-slate-400 mt-0.5">Learn about the partnership model.</div>
                   </div>
                 </Link>
-                <Link href="/schools/apply" onClick={() => setPartnerOpen(false)} className="flex items-start gap-3 px-4 py-2.5 hover:bg-slate-50">
+                <Link href="/schools/join" onClick={() => setPartnerOpen(false)} className="flex items-start gap-3 px-4 py-2.5 hover:bg-slate-50">
                   <span className="text-base mt-0.5">🏫</span>
                   <div>
                     <div className="text-[11px] font-bold text-slate-800">For Schools</div>
                     <div className="text-[9px] text-slate-400 mt-0.5">Structured P.E. programmes. Set your margins.</div>
                   </div>
                 </Link>
-                <Link href="/communities/apply" onClick={() => setPartnerOpen(false)} className="flex items-start gap-3 px-4 py-2.5 hover:bg-slate-50">
+                <Link href="/communities/join" onClick={() => setPartnerOpen(false)} className="flex items-start gap-3 px-4 py-2.5 hover:bg-slate-50">
                   <span className="text-base mt-0.5">🏘️</span>
                   <div>
                     <div className="text-[11px] font-bold text-slate-800">For Estates</div>
@@ -152,8 +152,8 @@ export default function Navbar() {
           <Link href="/#how" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-2 border-b border-slate-50">How It Works</Link>
           <div className="pt-2 space-y-1">
             <Link href="/partners" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 text-sm font-medium text-slate-600 py-2 border-b border-slate-50">🤝 Partner With Us</Link>
-            <Link href="/schools/apply" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 text-sm font-semibold text-teal-primary py-2">🏫 For Schools →</Link>
-            <Link href="/communities/apply" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 text-sm font-semibold text-teal-primary py-2">🏘️ For Estates →</Link>
+            <Link href="/schools/join" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 text-sm font-semibold text-teal-primary py-2">🏫 For Schools →</Link>
+            <Link href="/communities/join" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 text-sm font-semibold text-teal-primary py-2">🏘️ For Estates →</Link>
           </div>
         </div>
       )}

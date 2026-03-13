@@ -24,6 +24,7 @@ const CommunitySchema = new mongoose.Schema({
   city: { type: String, enum: ['abuja', 'lagos'], default: 'abuja' },
 
   facilities: [String],
+  interestedCategories: [String],
 
   defaultMarkupPercent: { type: Number, default: 10, min: 0, max: 30 },
   programMarkups: [{

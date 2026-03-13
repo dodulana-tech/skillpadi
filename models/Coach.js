@@ -90,6 +90,26 @@ const CoachSchema = new mongoose.Schema({
   referralEarnings: { type: Number, default: 0 },  // total referral commission earned
   trustScore: { type: Number, default: 50 },        // 0-100, starts at 50
   // Trust score changes: +10 for each vetted referral, -20 if referral gets complaint, +5 per clean term
+
+  // Tier system
+  coachTier: { type: String, enum: ['partner', 'independent', 'master'], default: 'partner' },
+  pricingModel: { type: String, enum: ['platform-set', 'coach-set'], default: 'platform-set' },
+  platformFeePercent: { type: Number, default: 15 },
+  personalRate: Number,
+  payoutMethod: { type: String, enum: ['bank', 'transfer'], default: 'bank' },
+  bankDetails: { bankName: String, accountNumber: String, accountName: String },
+  totalEarnings: { type: Number, default: 0 },
+  pendingPayout: { type: Number, default: 0 },
+  migratedClients: { type: Number, default: 0 },
+  canCreatePrograms: { type: Boolean, default: false },
+  brandedMethodology: String,
+  academyEnabled: { type: Boolean, default: false },
+  homeCommunity: String,
+  givesBack: { type: Boolean, default: false },
+  giveBackProgramIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'ImpactProgram' }],
+  volunteerHours: { type: Number, default: 0 },
+  impactChildrenTaught: { type: Number, default: 0 },
+  isCommunityChampion: { type: Boolean, default: false },
 }, {
   timestamps: true,
 });

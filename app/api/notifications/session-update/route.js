@@ -1,46 +1,60 @@
-import { handler, success, error, parseBody } from '@/lib/api-utils';
-import { authenticate, isAuthError } from '@/lib/auth';
+import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/db';
+import { requireRole, isAuthError } from '@/lib/auth';
 import Enrollment from '@/models/Enrollment';
+import User from '@/models/User';
 import { sendTextMessage } from '@/lib/whatsapp';
-import { PLATFORM } from '@/lib/constants';
 
-// POST /api/notifications/session-update
-// Admin sends a WhatsApp session-progress update to a parent.
-export const POST = handler(async (request) => {
-  const auth = await authenticate(request);
-  if (isAuthError(auth)) return auth;
-  if (auth.dbUser.role !== 'admin') return error('Admin only', 403);
+export async function POST(req) {
+  try {
+    const auth = await requireRole(req, ['admin']);
+    if (isAuthError(auth)) return auth;
 
-  const body = await parseBody(request);
-  if (!body?.enrollmentId) return error('enrollmentId required', 400);
+    await dbConnect();
 
-  await dbConnect();
+    const { enrollmentId, message, milestone, notify, note } = await req.json();
+    if (!enrollmentId) return NextResponse.json({ error: 'enrollmentId required' }, { status: 400 });
 
-  const enrollment = await Enrollment.findById(body.enrollmentId)
-    .populate('userId', 'name phone email')
-    .populate('programId', 'name sessions')
-    .lean();
+    const enrollment = await Enrollment.findById(enrollmentId).populate('programId', 'name sessions');
+    if (!enrollment) return NextResponse.json({ error: 'Enrollment not found' }, { status: 404 });
 
-  if (!enrollment) return error('Enrollment not found', 404);
+    // Increment session
+    enrollment.sessionsCompleted = (enrollment.sessionsCompleted || 0) + 1;
+    if (milestone && typeof milestone === 'string' && !enrollment.milestonesCompleted.includes(milestone)) {
+      enrollment.milestonesCompleted.push(milestone.slice(0, 200));
+    }
+    if (note && typeof note === 'string') {
+      const safeNote = note.slice(0, 500);
+      enrollment.notes = enrollment.notes ? `${enrollment.notes}\n${safeNote}` : safeNote;
+    }
 
-  const phone = enrollment.userId?.phone;
-  if (!phone) return error('Parent has no phone number on file', 400);
+    // Auto-complete if all sessions done
+    if (enrollment.sessionsCompleted >= (enrollment.programId?.sessions || 999)) {
+      enrollment.status = 'completed';
+    }
 
-  const childName = enrollment.childName;
-  const programName = enrollment.programId?.name || 'their program';
-  const sessionsCompleted = enrollment.sessionsCompleted || 0;
-  const totalSessions = enrollment.programId?.sessions || 0;
-  const note = body.note?.trim();
+    await enrollment.save();
 
-  const message = body.message?.trim() ||
-    `🌟 *Session Update — ${childName}*\n\n` +
-    `${childName} just completed session ${sessionsCompleted}/${totalSessions} of *${programName}*!\n\n` +
-    `View full progress: ${PLATFORM.url}/dashboard/parent`;
+    // Send WhatsApp if requested
+    if (notify) {
+      const parent = await User.findById(enrollment.userId, 'phone name');
+      if (parent?.phone) {
+        const prog = enrollment.programId;
+        let msg = `✅ *SkillPadi Session Update*\n${enrollment.childName} completed session ${enrollment.sessionsCompleted}/${prog?.sessions || '?'} of *${prog?.name || 'Programme'}*!`;
+        if (milestone) msg += `\n🏅 Milestone: ${milestone}`;
+        if (note) msg += `\nCoach notes: ${note}`;
+        msg += `\nView progress: ${process.env.NEXT_PUBLIC_APP_URL || 'https://skillpadi.com'}/dashboard/parent`;
+        sendTextMessage(parent.phone, msg);
+      }
+    }
 
-  const fullMessage = note ? `${message}\n\n📝 Coach note: ${note}` : message;
-
-  await sendTextMessage(phone, fullMessage);
-
-  return success({ sent: true });
-});
+    return NextResponse.json({
+      success: true,
+      sessionsCompleted: enrollment.sessionsCompleted,
+      status: enrollment.status,
+    });
+  } catch (err) {
+    console.error('Session update error:', err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+  }
+}

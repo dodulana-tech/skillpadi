@@ -34,6 +34,7 @@ const TABS = [
   { id: 'tournaments', label: 'Tournaments', icon: '🏆' },
   { id: 'shop', label: 'Shop', icon: '🛍️' },
   { id: 'sponsors', label: 'Sponsors', icon: '🤝' },
+  { id: 'impact', label: 'Impact', icon: '💚' },
   { id: 'revenue', label: 'Revenue', icon: '💳' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ];
@@ -176,6 +177,24 @@ export default function AdminPage() {
   // ── Bulk enrollment selection ──
   const [checkedEnrs, setCheckedEnrs] = useState(new Set());
   const [markingAll, setMarkingAll] = useState(false);
+
+  // ── Term report ──
+  const [reportModal, setReportModal] = useState(null); // { enr }
+  const [reportStep, setReportStep] = useState(1);
+  const [reportForm, setReportForm] = useState({
+    attendancePresent: '', attendanceTotal: '', overallRating: 0,
+    skills: [], strengths: [], improvements: [], coachNotes: '',
+    recommendation: '', awardCertificate: false,
+  });
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [strengthInput, setStrengthInput] = useState('');
+  const [improvementInput, setImprovementInput] = useState('');
+
+  // ── Impact tab ──
+  const [impactPrograms, setImpactPrograms] = useState([]);
+  const [impactStats, setImpactStats] = useState(null);
+  const [impactTab, setImpactTab] = useState('proposals');
+  const [impactLoading, setImpactLoading] = useState(false);
 
   // ── Auth guard ──
   useEffect(() => {
@@ -445,6 +464,102 @@ export default function AdminPage() {
       setCheckedEnrs(new Set());
     } else {
       setCheckedEnrs(new Set(active));
+    }
+  };
+
+  // ── Impact data loading ──
+  const loadImpactData = useCallback(async () => {
+    if (!isAdmin) return;
+    setImpactLoading(true);
+    try {
+      const [pRes, sRes] = await Promise.all([
+        authFetch('/api/impact/programs'),
+        authFetch('/api/impact/stats'),
+      ]);
+      if (pRes.ok) setImpactPrograms((await pRes.json()).programs || []);
+      if (sRes.ok) setImpactStats(await sRes.json());
+    } catch (e) { console.error('Impact load error:', e); }
+    setImpactLoading(false);
+  }, [isAdmin, authFetch]);
+
+  useEffect(() => { if (isAdmin && tab === 'impact') loadImpactData(); }, [isAdmin, tab, loadImpactData]);
+
+  const updateImpactProgram = async (id, update) => {
+    const res = await authFetch(`/api/impact/programs/${id}`, { method: 'PATCH', body: JSON.stringify(update) });
+    if (res.ok) {
+      toast.success(`Programme ${update.status === 'funding' ? 'approved' : 'paused'}`);
+      loadImpactData();
+    } else {
+      toast.error('Update failed');
+    }
+  };
+
+  // ── Term report handlers ──
+  const openReportModal = (enr) => {
+    const prog = enr.programId || {};
+    const skills = (prog.milestones || []).map(m => ({ name: m, beforeLevel: 'beginner', afterLevel: 'beginner', rating: 0 }));
+    setReportForm({
+      attendancePresent: enr.sessionsCompleted || '',
+      attendanceTotal: prog.sessions || '',
+      overallRating: 0,
+      skills,
+      strengths: [],
+      improvements: [],
+      coachNotes: '',
+      recommendation: '',
+      awardCertificate: false,
+    });
+    setReportStep(1);
+    setReportModal({ enr });
+  };
+
+  const submitReport = async () => {
+    if (!reportModal) return;
+    setReportSubmitting(true);
+    const { enr } = reportModal;
+    const body = {
+      attendance: { present: Number(reportForm.attendancePresent), total: Number(reportForm.attendanceTotal) },
+      overallRating: reportForm.overallRating,
+      skills: reportForm.skills,
+      strengths: reportForm.strengths,
+      improvements: reportForm.improvements,
+      coachNotes: reportForm.coachNotes,
+      recommendation: reportForm.recommendation,
+      awardCertificate: reportForm.awardCertificate,
+      publish: true,
+    };
+    const res = await authFetch(`/api/enrollments/${enr._id}/report`, { method: 'PUT', body: JSON.stringify(body) });
+    setReportSubmitting(false);
+    if (res.ok) {
+      toast.success('Report published!');
+      setReportModal(null);
+      const enrRes = await authFetch('/api/enrollments');
+      if (enrRes.ok) setEnrollments((await enrRes.json()).enrollments || []);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error(err.error || 'Failed to publish report');
+    }
+  };
+
+  // ── Coach tier change ──
+  const changeCoachTier = async (id, tier) => {
+    const res = await authFetch(`/api/coaches/${id}`, { method: 'PUT', body: JSON.stringify({ tier }) });
+    if (res.ok) {
+      setCoaches(prev => prev.map(c => c._id === id ? { ...c, tier } : c));
+      toast.success(`Coach tier changed to ${tier}`);
+    } else {
+      toast.error('Failed to change tier');
+    }
+  };
+
+  const processCoachPayout = async (coachId, coachName, pendingPayout) => {
+    if (!confirm(`Mark ${fmt(pendingPayout)} as paid to ${coachName}?`)) return;
+    const res = await authFetch(`/api/coaches/${coachId}`, { method: 'PUT', body: JSON.stringify({ pendingPayout: 0 }) });
+    if (res.ok) {
+      toast.success('Coach payout processed');
+      await refreshCoaches();
+    } else {
+      toast.error('Failed to process payout');
     }
   };
 
@@ -1806,6 +1921,271 @@ export default function AdminPage() {
         {modal === 'tournamentResults' && TournamentResultsModal()}
       </ModalCtx.Provider>
 
+      {/* ── Term Report Modal ── */}
+      {reportModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 pt-8 overflow-y-auto" onClick={() => !reportSubmitting && setReportModal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div>
+                <h2 className="font-serif text-base font-bold text-slate-900">Term Report</h2>
+                <div className="text-[10px] text-slate-400 mt-0.5">{reportModal.enr.childName} — {reportModal.enr.programId?.name || 'Program'}</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1">
+                  {[1,2,3,4,5].map(s => (
+                    <button key={s} onClick={() => setReportStep(s)}
+                      className={`w-6 h-6 rounded-full text-[9px] font-bold ${reportStep === s ? 'bg-teal-primary text-white' : reportStep > s ? 'bg-teal-100 text-teal-700' : 'bg-slate-100 text-slate-400'}`}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => setReportModal(null)} className="w-7 h-7 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
+              </div>
+            </div>
+
+            <div className="px-5 py-4 space-y-4 max-h-[65vh] overflow-y-auto">
+              {/* Step 1: Attendance + Overall Rating */}
+              {reportStep === 1 && (
+                <>
+                  <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider pb-1 border-b border-slate-100">Attendance & Overall Rating</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">Sessions Present</label>
+                      <input type="number" min="0" className="input-field text-xs w-full"
+                        value={reportForm.attendancePresent}
+                        onChange={e => setReportForm(prev => ({ ...prev, attendancePresent: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">Total Sessions</label>
+                      <input type="number" min="0" className="input-field text-xs w-full"
+                        value={reportForm.attendanceTotal}
+                        onChange={e => setReportForm(prev => ({ ...prev, attendanceTotal: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-2">Overall Rating</label>
+                    <div className="flex gap-1">
+                      {[1,2,3,4,5].map(star => (
+                        <button key={star} onClick={() => setReportForm(prev => ({ ...prev, overallRating: star }))}
+                          className={`text-2xl transition-colors ${reportForm.overallRating >= star ? 'text-amber-400' : 'text-slate-200'}`}>
+                          ★
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Step 2: Skills Assessment */}
+              {reportStep === 2 && (
+                <>
+                  <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider pb-1 border-b border-slate-100">Skills Assessment</div>
+                  {reportForm.skills.length === 0 && (
+                    <p className="text-[11px] text-slate-400 text-center py-4">No milestones defined for this programme. Add skills manually below.</p>
+                  )}
+                  <div className="space-y-3">
+                    {reportForm.skills.map((skill, i) => (
+                      <div key={i} className="bg-slate-50 rounded-lg p-3">
+                        <div className="font-semibold text-[11px] mb-2">{skill.name}</div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-[9px] text-slate-400 mb-1">Before</label>
+                            <select className="input-field text-[10px] w-full py-1"
+                              value={skill.beforeLevel}
+                              onChange={e => {
+                                const updated = [...reportForm.skills];
+                                updated[i] = { ...updated[i], beforeLevel: e.target.value };
+                                setReportForm(prev => ({ ...prev, skills: updated }));
+                              }}>
+                              {['beginner','developing','competent','proficient','advanced'].map(l => (
+                                <option key={l} value={l}>{l}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[9px] text-slate-400 mb-1">After</label>
+                            <select className="input-field text-[10px] w-full py-1"
+                              value={skill.afterLevel}
+                              onChange={e => {
+                                const updated = [...reportForm.skills];
+                                updated[i] = { ...updated[i], afterLevel: e.target.value };
+                                setReportForm(prev => ({ ...prev, skills: updated }));
+                              }}>
+                              {['beginner','developing','competent','proficient','advanced'].map(l => (
+                                <option key={l} value={l}>{l}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[9px] text-slate-400 mb-1">Rating</label>
+                            <div className="flex gap-0.5 pt-1">
+                              {[1,2,3,4,5].map(star => (
+                                <button key={star} onClick={() => {
+                                  const updated = [...reportForm.skills];
+                                  updated[i] = { ...updated[i], rating: star };
+                                  setReportForm(prev => ({ ...prev, skills: updated }));
+                                }}
+                                  className={`text-sm ${skill.rating >= star ? 'text-amber-400' : 'text-slate-200'}`}>★</button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => {
+                    const name = prompt('Skill name:');
+                    if (name) setReportForm(prev => ({ ...prev, skills: [...prev.skills, { name, beforeLevel: 'beginner', afterLevel: 'beginner', rating: 0 }] }));
+                  }} className="btn-outline text-[10px] px-3 py-1.5">+ Add Skill</button>
+                </>
+              )}
+
+              {/* Step 3: Strengths, Improvements, Notes */}
+              {reportStep === 3 && (
+                <>
+                  <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider pb-1 border-b border-slate-100">Qualitative Feedback</div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-1">Strengths</label>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {reportForm.strengths.map((s, i) => (
+                        <span key={i} className="bg-emerald-50 text-emerald-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
+                          {s}
+                          <button onClick={() => setReportForm(prev => ({ ...prev, strengths: prev.strengths.filter((_, j) => j !== i) }))}
+                            className="text-emerald-400 hover:text-emerald-700 leading-none">×</button>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex gap-1">
+                      <input className="input-field text-xs flex-1" placeholder="Add a strength..."
+                        value={strengthInput} onChange={e => setStrengthInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && strengthInput.trim()) { setReportForm(prev => ({ ...prev, strengths: [...prev.strengths, strengthInput.trim()] })); setStrengthInput(''); }}} />
+                      <button onClick={() => { if (strengthInput.trim()) { setReportForm(prev => ({ ...prev, strengths: [...prev.strengths, strengthInput.trim()] })); setStrengthInput(''); }}}
+                        className="btn-outline text-[10px] px-2 py-1">Add</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-1">Areas to Improve</label>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {reportForm.improvements.map((s, i) => (
+                        <span key={i} className="bg-amber-50 text-amber-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1">
+                          {s}
+                          <button onClick={() => setReportForm(prev => ({ ...prev, improvements: prev.improvements.filter((_, j) => j !== i) }))}
+                            className="text-amber-400 hover:text-amber-700 leading-none">×</button>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex gap-1">
+                      <input className="input-field text-xs flex-1" placeholder="Add an area to improve..."
+                        value={improvementInput} onChange={e => setImprovementInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && improvementInput.trim()) { setReportForm(prev => ({ ...prev, improvements: [...prev.improvements, improvementInput.trim()] })); setImprovementInput(''); }}} />
+                      <button onClick={() => { if (improvementInput.trim()) { setReportForm(prev => ({ ...prev, improvements: [...prev.improvements, improvementInput.trim()] })); setImprovementInput(''); }}}
+                        className="btn-outline text-[10px] px-2 py-1">Add</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-1">Coach Notes</label>
+                    <textarea className="input-field text-xs w-full resize-none" rows={3}
+                      placeholder="General observations, progress notes..."
+                      value={reportForm.coachNotes}
+                      onChange={e => setReportForm(prev => ({ ...prev, coachNotes: e.target.value }))} />
+                  </div>
+                </>
+              )}
+
+              {/* Step 4: Recommendation */}
+              {reportStep === 4 && (
+                <>
+                  <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider pb-1 border-b border-slate-100">Recommendation</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { id: 'repeat', label: 'Repeat Level', desc: 'Child should repeat this programme for stronger foundations', icon: '🔄' },
+                      { id: 'advance', label: 'Advance', desc: 'Ready for the next level in this sport', icon: '⬆️' },
+                      { id: 'new-sport', label: 'Try New Sport', desc: 'Would benefit from exploring a different activity', icon: '🌟' },
+                      { id: 'private', label: 'Private Sessions', desc: 'Recommend 1-on-1 coaching for accelerated progress', icon: '🎯' },
+                    ].map(r => (
+                      <button key={r.id}
+                        onClick={() => setReportForm(prev => ({ ...prev, recommendation: r.id }))}
+                        className={`text-left p-4 rounded-xl border-2 transition-all ${
+                          reportForm.recommendation === r.id
+                            ? 'border-teal-primary bg-teal-50'
+                            : 'border-slate-200 hover:border-slate-300'
+                        }`}>
+                        <div className="text-xl mb-1">{r.icon}</div>
+                        <div className="font-bold text-xs">{r.label}</div>
+                        <div className="text-[9px] text-slate-500 mt-0.5">{r.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Step 5: Review + Publish */}
+              {reportStep === 5 && (
+                <>
+                  <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider pb-1 border-b border-slate-100">Review & Publish</div>
+                  <div className="space-y-3">
+                    <div className="bg-slate-50 rounded-lg p-3">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-1">Attendance</div>
+                      <div className="text-sm font-bold">{reportForm.attendancePresent}/{reportForm.attendanceTotal} sessions</div>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-3">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-1">Overall Rating</div>
+                      <div className="flex gap-0.5">{[1,2,3,4,5].map(s => <span key={s} className={`text-lg ${reportForm.overallRating >= s ? 'text-amber-400' : 'text-slate-200'}`}>★</span>)}</div>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-3">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-1">Skills ({reportForm.skills.length})</div>
+                      {reportForm.skills.map((sk, i) => (
+                        <div key={i} className="text-[11px]">{sk.name}: {sk.beforeLevel} → {sk.afterLevel} {'★'.repeat(sk.rating)}</div>
+                      ))}
+                    </div>
+                    {reportForm.strengths.length > 0 && (
+                      <div className="bg-slate-50 rounded-lg p-3">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-1">Strengths</div>
+                        <div className="flex flex-wrap gap-1">{reportForm.strengths.map((s,i) => <span key={i} className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5 rounded-full">{s}</span>)}</div>
+                      </div>
+                    )}
+                    {reportForm.improvements.length > 0 && (
+                      <div className="bg-slate-50 rounded-lg p-3">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-1">Areas to Improve</div>
+                        <div className="flex flex-wrap gap-1">{reportForm.improvements.map((s,i) => <span key={i} className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5 rounded-full">{s}</span>)}</div>
+                      </div>
+                    )}
+                    {reportForm.recommendation && (
+                      <div className="bg-slate-50 rounded-lg p-3">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-1">Recommendation</div>
+                        <div className="text-sm font-bold capitalize">{reportForm.recommendation.replace('-', ' ')}</div>
+                      </div>
+                    )}
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none mt-2">
+                    <input type="checkbox" className="w-3.5 h-3.5 rounded accent-teal-600"
+                      checked={reportForm.awardCertificate}
+                      onChange={e => setReportForm(prev => ({ ...prev, awardCertificate: e.target.checked }))} />
+                    Award completion certificate
+                  </label>
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-between px-5 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl">
+              <button onClick={() => setReportStep(s => Math.max(1, s - 1))} disabled={reportStep === 1}
+                className="btn-outline text-xs px-4 py-2 disabled:opacity-40">← Back</button>
+              <div className="flex gap-2">
+                <button onClick={() => setReportModal(null)} className="btn-outline text-xs px-4 py-2">Cancel</button>
+                {reportStep < 5 ? (
+                  <button onClick={() => setReportStep(s => s + 1)} className="btn-primary text-xs px-5 py-2">Next →</button>
+                ) : (
+                  <button onClick={submitReport} disabled={reportSubmitting}
+                    className="btn-primary text-xs px-5 py-2 disabled:opacity-60">
+                    {reportSubmitting ? 'Publishing...' : '📋 Publish Report'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Award Achievement Modal ── */}
       {awardModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setAwardModal(null)}>
@@ -2241,6 +2621,10 @@ export default function AdminPage() {
                               )}
                               <button onClick={() => openAwardModal(enr)}
                                 className="btn-sm text-[9px] bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-2 py-1 font-semibold">🏅 Award</button>
+                              {enr.status === 'completed' && (
+                                <button onClick={() => openReportModal(enr)}
+                                  className="btn-sm text-[9px] bg-purple-50 text-purple-700 border border-purple-200 rounded-lg px-2 py-1 font-semibold">📝 Write Report</button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -2328,7 +2712,14 @@ export default function AdminPage() {
                             {c.initials}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="font-bold text-sm truncate">{c.name}</div>
+                            <div className="flex items-center gap-1.5">
+                              <div className="font-bold text-sm truncate">{c.name}</div>
+                              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${
+                                c.tier === 'master' ? 'bg-purple-100 text-purple-700' :
+                                c.tier === 'independent' ? 'bg-blue-100 text-blue-700' :
+                                'bg-teal-100 text-teal-700'
+                              }`}>{(c.tier || 'partner').charAt(0).toUpperCase() + (c.tier || 'partner').slice(1)}</span>
+                            </div>
                             <div className="text-[10px] truncate" style={{ color: cat.color || '#64748b' }}>{cat.icon} {c.title || cat.name}</div>
                           </div>
                           {!c.isActive && <span className="badge badge-gray text-[8px] shrink-0">Inactive</span>}
@@ -2340,6 +2731,27 @@ export default function AdminPage() {
                           </span>
                           {c.rating > 0 && <span className="text-[10px] text-slate-400">⭐ {c.rating} ({c.reviewCount})</span>}
                           {c.yearsExperience > 0 && <span className="text-[10px] text-slate-400">{c.yearsExperience}y exp</span>}
+                        </div>
+
+                        {/* Tier + Payout */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <select
+                            className="input-field text-[10px] py-1 w-28"
+                            value={c.tier || 'partner'}
+                            onChange={e => changeCoachTier(c._id, e.target.value)}
+                          >
+                            <option value="partner">Partner</option>
+                            <option value="independent">Independent</option>
+                            <option value="master">Master</option>
+                          </select>
+                          {c.pendingPayout > 0 && (
+                            <button
+                              onClick={() => processCoachPayout(c._id, c.name, c.pendingPayout)}
+                              className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg px-2 py-1 font-semibold hover:bg-emerald-100 transition-colors"
+                            >
+                              💳 Pay {fmt(c.pendingPayout)}
+                            </button>
+                          )}
                         </div>
 
                         {/* Vetting progress bar */}
@@ -2377,6 +2789,32 @@ export default function AdminPage() {
                   {!coachSearch && <button onClick={openCreateCoach} className="btn-primary text-xs px-4 py-2">+ Add First Coach</button>}
                 </div>
               )}
+
+              {/* Coach-Created Programs Awaiting Approval */}
+              {!loadingData && (() => {
+                const coachPrograms = programs.filter(p => p.createdBy === 'coach' && !p.isActive);
+                if (coachPrograms.length === 0) return null;
+                return (
+                  <div className="mt-6">
+                    <h2 className="font-serif text-sm font-bold mb-3">Coach Programs Awaiting Approval ({coachPrograms.length})</h2>
+                    <div className="space-y-2">
+                      {coachPrograms.map(p => (
+                        <div key={p._id} className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-xs">{p.categoryId?.icon} {p.name}</div>
+                            <div className="text-[10px] text-slate-500">by {p.coachId?.name || '—'} · {p.schedule || 'No schedule'} · {fmt(p.pricePerSession)}/session</div>
+                          </div>
+                          <div className="flex gap-1.5 shrink-0">
+                            <button onClick={() => openEditProgram(p)} className="btn-outline btn-sm text-[9px]">Review</button>
+                            <button onClick={() => toggleProgramActive(p._id, false)}
+                              className="btn-sm text-[9px] bg-emerald-500 text-white rounded-lg px-2 py-1 font-semibold hover:bg-emerald-600">Approve</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -2643,7 +3081,7 @@ export default function AdminPage() {
               {/* Sub-tabs */}
               <div className="flex gap-1 mb-4 border-b border-slate-200">
                 {[
-                  { id: 'pending', label: `Pending (${schools.filter(s => s.status === 'pending').length})` },
+                  { id: 'pending', label: `New Partnerships (${schools.filter(s => s.status === 'pending').length})` },
                   { id: 'approved', label: `Active (${schools.filter(s => s.status === 'approved').length})` },
                   { id: 'all', label: `All (${schools.length})` },
                 ].map(st => (
@@ -2674,7 +3112,7 @@ export default function AdminPage() {
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                               <div className="font-bold text-sm">{sch.name}</div>
                               <span className={`badge ${sch.status === 'approved' ? 'badge-green' : sch.status === 'rejected' ? 'badge-red' : 'badge-amber'} text-[9px]`}>
-                                {sch.status}
+                                {sch.status === 'pending' ? 'Setting up' : sch.status === 'approved' ? 'Active' : sch.status === 'rejected' ? 'Paused' : sch.status}
                               </span>
                               {sch.schoolType && <span className="badge badge-gray text-[9px]">{sch.schoolType}</span>}
                             </div>
@@ -2722,7 +3160,7 @@ export default function AdminPage() {
                                   onClick={() => approveSchool(sch._id)}
                                   disabled={approvingSchool === sch._id + '_approving'}
                                   className="px-3 py-1.5 bg-emerald-500 text-white text-[10px] font-semibold rounded-lg hover:bg-emerald-600 disabled:opacity-60 transition-colors">
-                                  {approvingSchool === sch._id + '_approving' ? '…' : '✓ Approve'}
+                                  {approvingSchool === sch._id + '_approving' ? '…' : '✓ Activate'}
                                 </button>
                                 <div className="flex gap-1">
                                   <input
@@ -2734,8 +3172,8 @@ export default function AdminPage() {
                                   <button
                                     onClick={() => rejectSchool(sch._id)}
                                     disabled={approvingSchool === sch._id + '_rejecting'}
-                                    className="px-2.5 py-1 bg-red-500 text-white text-[10px] font-semibold rounded-lg hover:bg-red-600 disabled:opacity-60 transition-colors">
-                                    {approvingSchool === sch._id + '_rejecting' ? '…' : '✗ Reject'}
+                                    className="px-2.5 py-1 bg-slate-400 text-white text-[10px] font-semibold rounded-lg hover:bg-slate-500 disabled:opacity-60 transition-colors">
+                                    {approvingSchool === sch._id + '_rejecting' ? '…' : 'Not Now'}
                                   </button>
                                 </div>
                               </>
@@ -2782,7 +3220,7 @@ export default function AdminPage() {
 
               <div className="flex gap-1 mb-4 border-b border-slate-200">
                 {[
-                  { id: 'pending', label: `New (${communities.filter(c => c.status === 'pending').length})` },
+                  { id: 'pending', label: `New Partnerships (${communities.filter(c => c.status === 'pending').length})` },
                   { id: 'approved', label: `Active (${communities.filter(c => c.status === 'approved').length})` },
                   { id: 'all', label: `All (${communities.length})` },
                 ].map(st => (
@@ -2921,6 +3359,181 @@ export default function AdminPage() {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* ════════ IMPACT ════════ */}
+          {tab === 'impact' && (
+            <div className="animate-fade-in">
+              <div className="flex items-center justify-between mb-4">
+                <h1 className="font-serif text-xl">Impact Programmes</h1>
+                <button onClick={loadImpactData} className="btn-outline text-[10px] px-2.5 py-1">↻ Refresh</button>
+              </div>
+
+              {/* Impact stats */}
+              {impactStats && (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+                  {[
+                    { l: 'Total Programmes', v: impactStats.totalPrograms || 0, icon: '📋' },
+                    { l: 'Children Enrolled', v: impactStats.totalChildren || 0, icon: '👧' },
+                    { l: 'Total Donations', v: fmt(impactStats.totalDonations || 0), icon: '💚' },
+                    { l: 'Funding Progress', v: `${impactStats.avgFundingPercent || 0}%`, icon: '📊' },
+                  ].map(s => (
+                    <div key={s.l} className="bg-white rounded-xl border border-slate-200/80 p-4">
+                      <div className="text-[9px] uppercase font-bold text-slate-400">{s.icon} {s.l}</div>
+                      <div className="font-serif text-xl mt-1">{s.v}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Impact sub-tabs */}
+              <div className="flex gap-1 mb-4 border-b border-slate-200">
+                {[
+                  { id: 'proposals', label: 'Proposals' },
+                  { id: 'programmes', label: 'Programmes' },
+                  { id: 'children', label: 'Children' },
+                  { id: 'donations', label: 'Donations' },
+                ].map(st => (
+                  <button key={st.id} onClick={() => setImpactTab(st.id)}
+                    className={`px-3 py-1.5 text-[11px] font-semibold rounded-t-lg -mb-px transition-colors ${
+                      impactTab === st.id ? 'bg-white border border-b-white border-slate-200 text-teal-primary' : 'text-slate-400 hover:text-slate-600'
+                    }`}>{st.label}</button>
+                ))}
+              </div>
+
+              {impactLoading ? <p className="text-sm text-slate-400">Loading impact data...</p> : (
+                <>
+                  {/* PROPOSALS */}
+                  {impactTab === 'proposals' && (() => {
+                    const proposals = impactPrograms.filter(p => p.status === 'proposed');
+                    return proposals.length === 0 ? (
+                      <div className="bg-white rounded-xl border border-slate-200/80 p-10 text-center text-slate-400 text-sm">No pending proposals.</div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {proposals.map(prog => (
+                          <div key={prog._id} className="bg-white rounded-xl border border-slate-200/80 p-5">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div>
+                                <div className="font-bold text-sm">{prog.name}</div>
+                                <div className="text-[10px] text-slate-400">{prog.categoryId?.icon} {prog.categoryId?.name} · {prog.city || 'abuja'}</div>
+                              </div>
+                              <span className="badge badge-amber text-[9px]">Proposed</span>
+                            </div>
+                            {prog.description && <p className="text-[11px] text-slate-500 mb-3">{prog.description}</p>}
+                            <div className="text-[10px] text-slate-500 space-y-0.5 mb-3">
+                              {prog.targetChildren && <div>Target: {prog.targetChildren} children</div>}
+                              {prog.fundingGoal && <div>Funding goal: {fmt(prog.fundingGoal)}</div>}
+                              {prog.coachId?.name && <div>Coach: {prog.coachId.name}</div>}
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => updateImpactProgram(prog._id, { status: 'funding' })}
+                                className="btn-primary text-[10px] px-3 py-1.5 flex-1">Approve → Funding</button>
+                              <button onClick={() => updateImpactProgram(prog._id, { status: 'paused' })}
+                                className="btn-outline text-[10px] px-3 py-1.5">Decline</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {/* PROGRAMMES */}
+                  {impactTab === 'programmes' && (
+                    <div className="space-y-3">
+                      {impactPrograms.length === 0 ? (
+                        <div className="bg-white rounded-xl border border-slate-200/80 p-10 text-center text-slate-400 text-sm">No impact programmes yet.</div>
+                      ) : impactPrograms.map(prog => {
+                        const fundPct = prog.fundingGoal ? Math.min(100, Math.round(((prog.fundingRaised || 0) / prog.fundingGoal) * 100)) : 0;
+                        return (
+                          <div key={prog._id} className="bg-white rounded-xl border border-slate-200/80 p-5">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <div className="font-bold text-sm">{prog.name}</div>
+                                  <span className={`badge text-[9px] ${
+                                    prog.status === 'active' ? 'badge-green' :
+                                    prog.status === 'funding' ? 'badge-blue' :
+                                    prog.status === 'proposed' ? 'badge-amber' :
+                                    prog.status === 'completed' ? 'badge-gray' : 'badge-red'
+                                  }`}>{prog.status}</span>
+                                </div>
+                                <div className="text-[10px] text-slate-500 mb-2">
+                                  {prog.categoryId?.icon} {prog.categoryId?.name} · {prog.enrollmentCount || 0} enrolled
+                                  {prog.targetChildren ? ` / ${prog.targetChildren} target` : ''}
+                                </div>
+                                {prog.fundingGoal > 0 && (
+                                  <div className="mb-2">
+                                    <div className="flex justify-between text-[9px] text-slate-400 mb-1">
+                                      <span>Funding: {fmt(prog.fundingRaised || 0)} / {fmt(prog.fundingGoal)}</span>
+                                      <span>{fundPct}%</span>
+                                    </div>
+                                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                      <div className={`h-full rounded-full ${fundPct >= 100 ? 'bg-emerald-500' : fundPct >= 50 ? 'bg-blue-500' : 'bg-amber-500'}`}
+                                        style={{ width: `${fundPct}%` }} />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* CHILDREN */}
+                  {impactTab === 'children' && (
+                    <div className="space-y-4">
+                      {impactPrograms.filter(p => (p.children || p.enrollments || []).length > 0).length === 0 ? (
+                        <div className="bg-white rounded-xl border border-slate-200/80 p-10 text-center text-slate-400 text-sm">No children enrolled in impact programmes yet.</div>
+                      ) : impactPrograms.filter(p => (p.children || p.enrollments || []).length > 0).map(prog => (
+                        <div key={prog._id} className="bg-white rounded-xl border border-slate-200/80 p-4">
+                          <div className="font-bold text-xs mb-2">{prog.categoryId?.icon} {prog.name}</div>
+                          <div className="space-y-1">
+                            {(prog.children || prog.enrollments || []).map((child, i) => (
+                              <div key={i} className="flex items-center gap-2 text-[11px] py-1 border-b border-slate-50 last:border-0">
+                                <span className="font-semibold">{child.childName || child.name}</span>
+                                {child.age && <span className="text-slate-400">{child.age} yrs</span>}
+                                {child.parentName && <span className="text-slate-400 ml-auto">{child.parentName}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* DONATIONS */}
+                  {impactTab === 'donations' && (
+                    <div className="bg-white rounded-xl border border-slate-200/80 overflow-auto">
+                      <table className="w-full text-xs">
+                        <thead><tr className="border-b border-slate-100 bg-slate-50/50">
+                          <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Donor</th>
+                          <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Programme</th>
+                          <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Amount</th>
+                          <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Status</th>
+                          <th className="text-left p-3 text-[9px] uppercase font-bold text-slate-400">Date</th>
+                        </tr></thead>
+                        <tbody>
+                          {(impactStats?.donations || []).map((d, i) => (
+                            <tr key={d._id || i} className="border-b border-slate-50 hover:bg-slate-50/50">
+                              <td className="p-3 font-semibold">{d.donorName || d.donor?.name || 'Anonymous'}</td>
+                              <td className="p-3 text-[10px]">{d.programName || d.program?.name || '—'}</td>
+                              <td className="p-3 font-semibold text-emerald-700">{fmt(d.amount)}</td>
+                              <td className="p-3"><span className={`badge ${d.status === 'success' ? 'badge-green' : d.status === 'pending' ? 'badge-amber' : 'badge-red'}`}>{d.status || 'success'}</span></td>
+                              <td className="p-3 text-[10px] text-slate-400">{d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {(!impactStats?.donations || impactStats.donations.length === 0) && (
+                        <div className="p-8 text-center text-slate-400 text-sm">No donations recorded yet.</div>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

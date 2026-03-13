@@ -264,37 +264,46 @@ export function LandingClient({ categories, coaches, programs }) {
               const sup = SUPERVISION_MAP[prog.supervision];
               return (
                 <div key={prog._id} className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all animate-fade-in">
-                  {/* Category strip */}
-                  <div className="h-1 w-full" style={{ background: cat?.color || '#0F766E' }} />
-                  <div className="p-5">
-                    {/* Top row: category + availability */}
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: cat?.color }}>
-                        {cat?.name}
-                      </span>
-                      {spots <= 0
-                        ? <span className="text-[10px] font-semibold text-red-500">Full</span>
-                        : spots <= 3
-                        ? <span className="text-[10px] font-semibold text-amber-600">{spots} spot{spots !== 1 ? 's' : ''} left</span>
-                        : <span className="text-[10px] text-slate-400">{spots} spots</span>}
+                  {/* Category header band */}
+                  <div className="px-4 py-3 flex items-center justify-between" style={{ background: `${cat?.color || '#0F766E'}08` }}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{cat?.icon}</span>
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: cat?.color }}>{cat?.name}</div>
+                        <div className="font-serif text-[1.05rem] leading-snug">{prog.name}</div>
+                      </div>
                     </div>
-                    {/* Program name */}
-                    <div className="font-serif text-[1.05rem] leading-snug mb-1">{prog.name}</div>
-                    {/* Coach */}
-                    <div className="flex items-center gap-1.5 mb-3">
-                      <Link href={`/coaches/${coach?.slug}`} className="text-xs font-semibold text-slate-700 hover:text-teal-primary transition-colors">
+                    {spots <= 0
+                      ? <span className="text-[10px] font-semibold text-red-500">Full</span>
+                      : spots <= 3
+                      ? <span className="text-[10px] font-semibold text-amber-600">{spots} spot{spots !== 1 ? 's' : ''} left</span>
+                      : <span className="text-[10px] text-slate-400">{spots} spots</span>}
+                  </div>
+                  <div className="p-5 pt-3">
+                    {/* Detail lines */}
+                    <div className="text-[11px] text-slate-500 space-y-0.5 mb-3">
+                      <div>{prog.location} · Ages {prog.ageRange}</div>
+                      <div>{prog.schedule}</div>
+                    </div>
+                    {/* Badges */}
+                    <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                      {prog.gender === 'female' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-pink-50 text-pink-600 text-[10px] font-semibold">Girls only</span>
+                      )}
+                      {sup && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-semibold">{sup.icon} {sup.label}</span>
+                      )}
+                    </div>
+                    {/* Coach row */}
+                    <div className="flex items-center gap-2 border-t border-slate-100 pt-3 mb-4">
+                      <CoachAvatar initials={coach?.initials} color={cat?.color || '#0F766E'} size={24} />
+                      <Link href={`/coaches/${coach?.slug}`} className="text-xs font-semibold hover:underline transition-colors" style={{ color: cat?.color || '#0F766E' }}>
                         {coach?.name}
                       </Link>
                       <ShieldBadge level={coach?.shieldLevel} />
                     </div>
-                    {/* Meta */}
-                    <div className="text-[11px] text-slate-400 space-y-0.5 mb-4">
-                      <div>{prog.location} · Ages {prog.ageRange}</div>
-                      <div>{prog.schedule} · {prog.duration} min · {prog.groupSize}</div>
-                      {sup && <div>{sup.label}{prog.gender && prog.gender !== 'any' ? ` · ${prog.gender === 'female' ? 'Girls' : 'Boys'} only` : ''}</div>}
-                    </div>
                     {/* Price + actions */}
-                    <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+                    <div className="flex items-center justify-between">
                       <div>
                         <div className="font-serif text-xl text-slate-900">{fmt(total)}</div>
                         <div className="text-[10px] text-slate-400">{prog.sessions} sessions · incl. VAT</div>
@@ -312,7 +321,7 @@ export function LandingClient({ categories, coaches, programs }) {
                           onClick={() => setEnrollProg(prog)}
                           className="btn-primary btn-sm px-4"
                         >
-                          Enroll
+                          Enroll Now
                         </button>
                       </div>
                     </div>
@@ -323,6 +332,113 @@ export function LandingClient({ categories, coaches, programs }) {
           </div>
         </div>
       </section>
+
+      {/* ── Holiday Programs ── */}
+      {(() => {
+        const events = filteredPrograms.filter(p => p.isEvent);
+        if (events.length === 0) return null;
+        const now = new Date();
+        return (
+          <section className="py-10 px-5">
+            <div className="page-container">
+              <div className="flex items-center gap-2 mb-5">
+                <h2 className="font-serif text-[clamp(1.4rem,3vw,1.8rem)]">Holiday Programs</h2>
+                <span className="text-[9px] font-bold bg-red-500 text-white px-2 py-0.5 rounded-full leading-none">HOT</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {events.map((prog) => {
+                  const cat = prog.categoryId;
+                  const coach = prog.coachId;
+                  const spots = prog.spotsTotal - prog.spotsTaken;
+                  const startDate = prog.eventDate?.start ? new Date(prog.eventDate.start) : null;
+                  const endDate = prog.eventDate?.end ? new Date(prog.eventDate.end) : null;
+                  const daysUntil = startDate ? Math.ceil((startDate - now) / (1000 * 60 * 60 * 24)) : null;
+                  const earlyBirdActive = prog.earlyBirdDeadline && new Date(prog.earlyBirdDeadline) > now;
+                  const baseTotal = prog.pricePerSession * prog.sessions;
+                  const discountedTotal = earlyBirdActive && prog.earlyBirdDiscount
+                    ? Math.round(baseTotal * (1 - prog.earlyBirdDiscount / 100))
+                    : baseTotal;
+                  const dateStr = startDate && endDate
+                    ? `${startDate.toLocaleDateString('en-NG', { month: 'short', day: 'numeric' })} – ${endDate.toLocaleDateString('en-NG', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                    : prog.schedule;
+                  const urgency = daysUntil === null ? null
+                    : daysUntil <= 0 ? 'Started'
+                    : daysUntil <= 7 ? `Starting in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}!`
+                    : daysUntil <= 14 ? `${daysUntil} days away`
+                    : 'Booking open';
+                  const urgencyColor = daysUntil !== null && daysUntil <= 7 ? 'text-red-600 bg-red-50' : daysUntil !== null && daysUntil <= 14 ? 'text-amber-600 bg-amber-50' : 'text-teal-600 bg-teal-50';
+                  return (
+                    <div key={prog._id} className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden hover:shadow-lg transition-all animate-fade-in">
+                      <div className="px-5 py-4" style={{ background: `linear-gradient(135deg, ${cat?.color || '#0F766E'}12, ${cat?.color || '#0F766E'}06)` }}>
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">{cat?.icon}</span>
+                            <div>
+                              <div className="text-[10px] font-bold uppercase tracking-wider" style={{ color: cat?.color }}>{cat?.name}</div>
+                              <div className="font-serif text-lg leading-snug">{prog.name}</div>
+                            </div>
+                          </div>
+                          {urgency && (
+                            <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${urgencyColor}`}>
+                              {daysUntil !== null && daysUntil <= 7 ? '🔥 ' : daysUntil !== null && daysUntil <= 14 ? '⏰ ' : ''}{urgency}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-600 space-y-0.5">
+                          <div>{dateStr}{prog.hoursPerDay ? ` · ${prog.hoursPerDay}hrs/day` : ''}</div>
+                          <div>{prog.location} · Ages {prog.ageRange}</div>
+                        </div>
+                      </div>
+                      <div className="px-5 py-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <CoachAvatar initials={coach?.initials} color={cat?.color || '#0F766E'} size={24} />
+                          <span className="text-xs font-semibold" style={{ color: cat?.color }}>{coach?.name}</span>
+                          <ShieldBadge level={coach?.shieldLevel} />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            {earlyBirdActive ? (
+                              <>
+                                <div className="text-[10px] text-slate-400 line-through">{fmt(baseTotal)}</div>
+                                <div className="font-serif text-xl text-slate-900">{fmt(discountedTotal)}</div>
+                                <div className="text-[9px] font-semibold text-emerald-600">Early bird · {prog.earlyBirdDiscount}% off</div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="font-serif text-xl text-slate-900">{fmt(baseTotal)}</div>
+                                <div className="text-[10px] text-slate-400">{prog.sessions} sessions · incl. VAT</div>
+                              </>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {spots <= 3 && spots > 0 && (
+                              <span className="text-[10px] font-semibold text-amber-600">{spots} spot{spots !== 1 ? 's' : ''}</span>
+                            )}
+                            <a
+                              href={`https://wa.me/?text=${encodeURIComponent(`🔥 SkillPadi Holiday Camp!\n${prog.name}\n📅 ${dateStr}\n📍 ${prog.location}\n💰 ${fmt(earlyBirdActive ? discountedTotal : baseTotal)}\nMy child is going — spots filling up fast!\nhttps://skillpadi.com/programs/${prog.slug || prog._id}`)}`}
+                              target="_blank" rel="noopener noreferrer"
+                              className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-[#25D366] hover:text-white text-slate-500 flex items-center justify-center text-sm transition-colors"
+                              title="Share"
+                            >
+                              📤
+                            </a>
+                            <button
+                              onClick={() => setEnrollProg(prog)}
+                              className="btn-primary btn-sm px-4"
+                            >
+                              Enroll Now
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Coaches */}
       <section id="coaches" className="py-10 px-5 bg-gradient-to-b from-emerald-50/50 to-cream">
@@ -409,8 +525,8 @@ export function LandingClient({ categories, coaches, programs }) {
                 Structured P.E. and extracurricular programs delivered by vetted coaches on your grounds. Progress reports, parent dashboards, and markup revenue — all included.
               </p>
               <div className="flex flex-col gap-2">
-                <a href="/schools/apply" className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-teal-primary text-white text-xs font-semibold rounded-xl hover:bg-teal-600 transition-colors">
-                  Get Started →
+                <a href="/schools/join" className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-teal-primary text-white text-xs font-semibold rounded-xl hover:bg-teal-600 transition-colors">
+                  Start a School Partnership →
                 </a>
                 <a href="/school" className="inline-flex items-center justify-center px-4 py-2 bg-white/10 text-white text-xs font-semibold rounded-xl hover:bg-white/20 transition-colors border border-white/20">
                   School Portal Login
@@ -425,8 +541,8 @@ export function LandingClient({ categories, coaches, programs }) {
                 Turn your common areas into skill-building hubs. Residents get exclusive discounts, and your estate earns a revenue share on every enrollment.
               </p>
               <div className="flex flex-col gap-2">
-                <a href="/communities/apply" className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-white text-emerald-800 text-xs font-semibold rounded-xl hover:bg-emerald-50 transition-colors">
-                  Get Started →
+                <a href="/communities/join" className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-white text-emerald-800 text-xs font-semibold rounded-xl hover:bg-emerald-50 transition-colors">
+                  Bring SkillPadi to Your Estate →
                 </a>
                 <a href={waLink(WA_BIZ, 'Hi! I manage an estate and want to discuss a SkillPadi partnership.')} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-white/10 text-white text-xs font-semibold rounded-xl hover:bg-white/20 transition-colors border border-white/20">
                   💬 Chat First
@@ -437,42 +553,144 @@ export function LandingClient({ categories, coaches, programs }) {
         </div>
       </section>
 
+      {/* ── Communities Section ── */}
+      <section className="py-14 px-5 bg-white border-t border-slate-200/60">
+        <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-10 items-start">
+          {/* Left — copy */}
+          <div>
+            <div className="text-[9px] uppercase font-bold text-amber-600 tracking-wider mb-2">FOR ESTATES &amp; COMMUNITIES</div>
+            <h2 className="font-serif text-[1.7rem] leading-tight mb-3">Activate your estate facilities</h2>
+            <p className="text-slate-500 text-sm leading-relaxed mb-5">
+              Your pool sits empty most weekday mornings. Our coaches turn it into a structured swim school — your residents get discounted lessons, and the estate earns on every enrollment.
+            </p>
+            <div className="space-y-2.5 mb-6">
+              {[
+                'Vetted coaches deliver sessions at your venue',
+                'Residents enjoy exclusive discounts (up to 5% off)',
+                'Estate earns passive revenue — no logistics on your end',
+              ].map(line => (
+                <div key={line} className="flex items-start gap-2">
+                  <span className="text-emerald-500 mt-0.5">&#10003;</span>
+                  <span className="text-sm text-slate-700">{line}</span>
+                </div>
+              ))}
+            </div>
+            <Link href="/communities/join" className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-teal-600 text-white text-sm font-semibold rounded-xl hover:-translate-y-0.5 transition-all">
+              Bring SkillPadi to Your Estate →
+            </Link>
+          </div>
+          {/* Right — economics card */}
+          <div className="rounded-2xl p-6" style={{ background: '#FAFAF8' }}>
+            <div className="font-semibold text-sm mb-4">Swimming at Your Estate Pool</div>
+            <div className="space-y-3 text-sm mb-5">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">SkillPadi base</span>
+                <span className="font-semibold">{fmt(25000)}/session</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Your markup (10%)</span>
+                <span className="font-semibold text-teal-600">+{fmt(2500)}</span>
+              </div>
+              <div className="border-t border-slate-200/60 pt-3 flex items-center justify-between">
+                <span className="text-slate-700 font-medium">Resident pays</span>
+                <span className="font-bold text-slate-900">{fmt(27500)}</span>
+              </div>
+            </div>
+            <div className="rounded-xl bg-amber-50 border border-amber-200/60 p-4 text-center">
+              <div className="font-bold text-amber-800 text-sm">Your estate earns {fmt(240000)}</div>
+              <div className="text-[11px] text-amber-600 mt-0.5">per 8-session term · 12 kids</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Impact Section ── */}
+      <section className="py-14 px-5" style={{ background: '#FAFAF5' }}>
+        <div className="max-w-3xl mx-auto text-center">
+          <div className="text-[9px] uppercase font-bold text-teal-600 tracking-wider mb-2">SkillPadi Impact</div>
+          <h2 className="font-serif text-[1.7rem] mb-3">Skills for Every Child</h2>
+          <p className="text-slate-500 text-sm leading-relaxed max-w-xl mx-auto mb-6">
+            Through our Give Back programme, we extend structured coaching to underserved communities — because every child deserves access to quality skills training.
+          </p>
+          <div className="inline-flex items-center gap-4 px-5 py-2.5 rounded-full bg-teal-50 text-teal-700 text-sm font-semibold mb-6">
+            <span>500+ children reached</span>
+            <span className="w-1 h-1 rounded-full bg-teal-300" />
+            <span>3 communities</span>
+          </div>
+          <div className="block">
+            <Link href="/impact" className="text-teal-primary text-sm font-semibold hover:underline">
+              Learn More →
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* Footer */}
-      <footer className="border-t border-slate-200/60 bg-white">
-        <div className="max-w-4xl mx-auto px-5 py-10">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 mb-8">
+      <footer style={{ background: '#111' }}>
+        <div className="max-w-5xl mx-auto px-5 py-12">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 mb-10">
+            {/* Col 1 — Brand */}
             <div>
-              <div className="font-serif text-base mb-3">SkillPadi</div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">Vetted coaches. Structured programs. Lifelong skills — for Abuja&apos;s next generation.</p>
+              <div className="font-serif text-lg text-white mb-1">SkillPadi</div>
+              <div className="text-[11px] text-teal-400 font-semibold mb-2">Skills that last a lifetime</div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">Vetted coaches, structured programmes, and real progress tracking for kids aged 3-16 across Nigeria.</p>
             </div>
+            {/* Col 2 — Programmes */}
             <div>
-              <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-3">Explore</div>
+              <div className="text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-3">Programmes</div>
               <ul className="space-y-2">
-                {[{ href: '/#programs', label: 'Programs' }, { href: '/shop', label: 'Shop' }, { href: '/leaderboard', label: 'Leaderboard' }, { href: '/tournaments', label: 'Tournaments' }].map(l => (
-                  <li key={l.href}><Link href={l.href} className="text-[11px] text-slate-600 hover:text-teal-primary transition-colors">{l.label}</Link></li>
+                {['Swimming', 'Football', 'Martial Arts', 'Music', 'Chess', 'Tennis', 'Coding'].map(l => (
+                  <li key={l}><Link href="/#programs" className="text-[11px] text-slate-400 hover:text-white transition-colors">{l}</Link></li>
                 ))}
               </ul>
             </div>
+            {/* Col 3 — Company */}
             <div>
-              <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-3">Partners</div>
+              <div className="text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-3">Company</div>
               <ul className="space-y-2">
-                {[{ href: '/schools/apply', label: 'Schools' }, { href: '/communities/apply', label: 'Estates' }, { href: '/school', label: 'School Portal' }, { href: '/dashboard/community', label: 'Estate Portal' }].map(l => (
-                  <li key={l.href}><Link href={l.href} className="text-[11px] text-slate-600 hover:text-teal-primary transition-colors">{l.label}</Link></li>
+                {[
+                  { href: '/about', label: 'About Us' },
+                  { href: '/#how', label: 'How It Works' },
+                  { href: '/schools/join', label: 'For Schools' },
+                  { href: '/communities/join', label: 'For Estates' },
+                  { href: '/impact', label: 'Impact' },
+                ].map(l => (
+                  <li key={l.href}><Link href={l.href} className="text-[11px] text-slate-400 hover:text-white transition-colors">{l.label}</Link></li>
                 ))}
               </ul>
             </div>
+            {/* Col 4 — Contact */}
             <div>
-              <div className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-3">Connect</div>
+              <div className="text-[10px] font-bold uppercase text-slate-500 tracking-wider mb-3">Contact</div>
               <ul className="space-y-2">
-                <li><a href={waLink(WA_BIZ, 'Hi SkillPadi!')} target="_blank" rel="noopener noreferrer" className="text-[11px] text-slate-600 hover:text-teal-primary transition-colors">💬 WhatsApp</a></li>
-                <li><Link href="/auth/signup" className="text-[11px] text-slate-600 hover:text-teal-primary transition-colors">Sign Up</Link></li>
-                <li><Link href="/auth/login" className="text-[11px] text-slate-600 hover:text-teal-primary transition-colors">Log In</Link></li>
+                <li className="text-[11px] text-slate-400">Abuja · Lagos</li>
+                <li><a href="mailto:hello@skillpadi.com" className="text-[11px] text-slate-400 hover:text-white transition-colors">hello@skillpadi.com</a></li>
+                <li><a href={waLink(WA_BIZ, 'Hi SkillPadi!')} target="_blank" rel="noopener noreferrer" className="text-[11px] text-slate-400 hover:text-white transition-colors">WhatsApp</a></li>
               </ul>
             </div>
           </div>
-          <div className="border-t border-slate-100 pt-5 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <p className="text-[10px] text-slate-400">© {new Date().getFullYear()} SkillPadi Ltd · Abuja, Nigeria</p>
-            <p className="text-[10px] text-slate-400">Prices include 7.5% VAT · All coaches are vetted</p>
+          {/* Trust badges */}
+          <div className="border-t border-white/10 pt-6 pb-4">
+            <div className="flex justify-center gap-4 flex-wrap text-[10px] text-slate-500">
+              <span>Every coach background-checked</span>
+              <span>·</span>
+              <span>Paystack-secured payments</span>
+              <span>·</span>
+              <span>VAT compliant (7.5%)</span>
+              <span>·</span>
+              <span>WhatsApp session updates</span>
+            </div>
+          </div>
+          {/* Bottom bar */}
+          <div className="border-t border-white/10 pt-5 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <p className="text-[10px] text-slate-500">&copy; 2026 SkillPadi Limited. RC: 1234567</p>
+            <div className="flex items-center gap-3 text-[10px] text-slate-500">
+              <Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
+              <span>·</span>
+              <Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link>
+              <span>·</span>
+              <Link href="/refunds" className="hover:text-white transition-colors">Refund Policy</Link>
+            </div>
           </div>
         </div>
       </footer>

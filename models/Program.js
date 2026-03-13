@@ -48,6 +48,23 @@ const ProgramSchema = new mongoose.Schema({
   termStart: Date,
   termEnd: Date,
 
+  // Coach earnings
+  coachEarningsPerSession: Number,
+  platformFeePerSession: Number,
+  createdBy: { type: String, enum: ['admin', 'coach'], default: 'admin' },
+  coachSetPrice: Boolean,
+
+  // Holiday intensives (Section E)
+  eventDate: { start: Date, end: Date },
+  hoursPerDay: Number,
+  isEvent: { type: Boolean, default: false },
+  earlyBirdDeadline: Date,
+  earlyBirdDiscount: Number,
+
+  // Term management (Section E)
+  termName: String,
+  nextTermProgramId: { type: mongoose.Schema.Types.ObjectId, ref: 'Program' },
+
   // SEO
   metaTitle: String,
   metaDescription: String,
