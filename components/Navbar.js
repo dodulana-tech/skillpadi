@@ -41,7 +41,7 @@ export default function Navbar() {
         {/* Desktop links */}
         <div className="hidden md:flex items-center gap-5">
           <Link href="/#programs" className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-800 transition-colors">Programs</Link>
-          <Link href="/#coaches" className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-800 transition-colors">Coaches</Link>
+          <Link href="/coaches" className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-800 transition-colors">Coaches</Link>
           <Link href="/shop" className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-800 transition-colors">Shop</Link>
           <Link href="/impact" className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-800 transition-colors">Impact</Link>
 
@@ -75,6 +75,13 @@ export default function Navbar() {
                   <div>
                     <div className="text-[11px] font-bold text-slate-800">For Estates</div>
                     <div className="text-[9px] text-slate-400 mt-0.5">Activate your facilities. Resident discounts.</div>
+                  </div>
+                </Link>
+                <Link href="/coaches/join" onClick={() => setPartnerOpen(false)} className="flex items-start gap-3 px-4 py-2.5 hover:bg-slate-50 border-t border-slate-100">
+                  <span className="text-base mt-0.5">🏅</span>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-800">For Coaches</div>
+                    <div className="text-[9px] text-slate-400 mt-0.5">Join as a coach. Transparent payouts.</div>
                   </div>
                 </Link>
               </div>
@@ -146,7 +153,7 @@ export default function Navbar() {
       {mobileOpen && (
         <div className="md:hidden bg-white border-t border-slate-100 px-5 py-3 space-y-1 shadow-lg">
           <Link href="/#programs" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-2 border-b border-slate-50">Programs</Link>
-          <Link href="/#coaches" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-2 border-b border-slate-50">Coaches</Link>
+          <Link href="/coaches" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-2 border-b border-slate-50">Coaches</Link>
           <Link href="/shop" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-2 border-b border-slate-50">Shop</Link>
           <Link href="/about" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-2 border-b border-slate-50">About</Link>
           <Link href="/#how" onClick={() => setMobileOpen(false)} className="block text-sm font-medium text-slate-600 py-2 border-b border-slate-50">How It Works</Link>
@@ -154,6 +161,7 @@ export default function Navbar() {
             <Link href="/partners" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 text-sm font-medium text-slate-600 py-2 border-b border-slate-50">🤝 Partner With Us</Link>
             <Link href="/schools/join" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 text-sm font-semibold text-teal-primary py-2">🏫 For Schools →</Link>
             <Link href="/communities/join" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 text-sm font-semibold text-teal-primary py-2">🏘️ For Estates →</Link>
+            <Link href="/coaches/join" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 text-sm font-semibold text-teal-primary py-2">🏅 For Coaches →</Link>
           </div>
         </div>
       )}

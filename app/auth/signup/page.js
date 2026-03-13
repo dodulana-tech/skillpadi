@@ -16,11 +16,27 @@ export default function SignupPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [referrerId, setReferrerId] = useState('');
+  const [coachInvite, setCoachInvite] = useState('');
 
   useEffect(() => {
     const ref = searchParams.get('ref');
     if (ref) setReferrerId(ref);
+    const coach = searchParams.get('coach');
+    if (coach) setCoachInvite(coach);
   }, [searchParams]);
+
+  const claimCoachInvite = async (token) => {
+    if (!coachInvite) return;
+    try {
+      const res = await fetch('/api/coaches/claim-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ inviteCode: coachInvite }),
+      });
+      if (res.ok) return true;
+    } catch (e) { /* non-blocking */ }
+    return false;
+  };
 
   const trackReferral = async (token, newUserId) => {
     if (!referrerId) return;
@@ -37,9 +53,13 @@ export default function SignupPage() {
     try {
       setLoading(true);
       const user = await signInWithGoogle();
-      if (referrerId && user) {
+      if (user) {
         const token = await user.getIdToken();
-        await trackReferral(token, user.uid);
+        if (referrerId) await trackReferral(token, user.uid);
+        if (coachInvite) {
+          const claimed = await claimCoachInvite(token);
+          if (claimed) { router.push('/dashboard/coach'); return; }
+        }
       }
       router.push('/dashboard/parent');
     } catch (err) {
@@ -71,6 +91,10 @@ export default function SignupPage() {
       });
 
       await trackReferral(token, user.uid);
+      if (coachInvite) {
+        const claimed = await claimCoachInvite(token);
+        if (claimed) { router.push('/dashboard/coach'); return; }
+      }
       router.push('/dashboard/parent');
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') setError('Email already registered');
@@ -88,8 +112,8 @@ export default function SignupPage() {
             <img src="/logomark.svg" alt="SkillPadi" className="w-10 h-10" />
             <span className="font-serif text-xl text-teal-primary">SkillPadi</span>
           </Link>
-          <h1 className="font-serif text-2xl mt-4">Create your account</h1>
-          <p className="text-sm text-slate-500 mt-1">Join SkillPadi to enroll your child</p>
+          <h1 className="font-serif text-2xl mt-4">{coachInvite ? 'Welcome, Coach!' : 'Create your account'}</h1>
+          <p className="text-sm text-slate-500 mt-1">{coachInvite ? 'Sign up to activate your coach profile on SkillPadi' : 'Join SkillPadi to enroll your child'}</p>
         </div>
 
         <button onClick={handleGoogleSignUp} disabled={loading}

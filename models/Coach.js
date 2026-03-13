@@ -110,6 +110,10 @@ const CoachSchema = new mongoose.Schema({
   volunteerHours: { type: Number, default: 0 },
   impactChildrenTaught: { type: Number, default: 0 },
   isCommunityChampion: { type: Boolean, default: false },
+
+  // Invite system
+  inviteCode: { type: String, unique: true, sparse: true },
+  inviteStatus: { type: String, enum: ['pending', 'claimed', 'expired'], default: 'pending' },
 }, {
   timestamps: true,
 });

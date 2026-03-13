@@ -570,6 +570,67 @@ export default function AdminPage() {
       toast.success(`Coach ${!current ? 'activated' : 'deactivated'}`);
     }
   };
+
+  const generateInviteLink = async (coachId) => {
+    const res = await authFetch(`/api/coaches/${coachId}/invite`, { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      const url = data.inviteUrl;
+      try { await navigator.clipboard.writeText(url); toast.success('Invite link copied to clipboard!'); }
+      catch { toast.success(`Invite link: ${url}`); }
+      await refreshCoaches();
+    } else {
+      toast.error('Failed to generate invite link');
+    }
+  };
+
+  const approveCoachApplication = async (enquiry) => {
+    const appData = JSON.parse(enquiry.message || '{}');
+    const cat = categories.find(c => c.slug === appData.categorySlug);
+    if (!cat) { toast.error('Category not found'); return; }
+    // Create coach record
+    const body = {
+      name: enquiry.parentName,
+      slug: toSlug(enquiry.parentName),
+      initials: autoInitials(enquiry.parentName),
+      categoryId: cat._id,
+      title: appData.title || undefined,
+      bio: appData.bio || undefined,
+      whatsapp: enquiry.phone,
+      email: enquiry.email,
+      yearsExperience: appData.yearsExperience ? Number(appData.yearsExperience) : undefined,
+      ageGroups: appData.ageGroups || undefined,
+      venues: appData.venues ? appData.venues.split(',').map(v => v.trim()).filter(Boolean) : [],
+      city: appData.city || 'abuja',
+      isActive: false, // will activate after they claim invite
+    };
+    const res = await authFetch('/api/coaches', { method: 'POST', body: JSON.stringify(body) });
+    if (!res.ok) { toast.error('Failed to create coach'); return; }
+    const created = await res.json();
+    // Generate invite link
+    const invRes = await authFetch(`/api/coaches/${created.coach._id}/invite`, { method: 'POST' });
+    // Mark enquiry as contacted
+    await authFetch(`/api/enquiries/${enquiry._id}`, { method: 'PATCH', body: JSON.stringify({ status: 'contacted', notes: 'Approved — invite generated' }) });
+    if (invRes.ok) {
+      const invData = await invRes.json();
+      try { await navigator.clipboard.writeText(invData.inviteUrl); toast.success(`Coach created & invite link copied!`); }
+      catch { toast.success(`Invite: ${invData.inviteUrl}`); }
+    } else {
+      toast.success('Coach created — generate invite from Coaches tab');
+    }
+    await refreshCoaches();
+    // Refresh enquiries
+    const eRes = await authFetch('/api/enquiries');
+    if (eRes.ok) setEnquiries((await eRes.json()).enquiries || []);
+  };
+
+  const declineCoachApplication = async (enquiryId) => {
+    const res = await authFetch(`/api/enquiries/${enquiryId}`, { method: 'PATCH', body: JSON.stringify({ status: 'declined', notes: 'Coach application declined' }) });
+    if (res.ok) {
+      setEnquiries(prev => prev.map(e => e._id === enquiryId ? { ...e, status: 'declined' } : e));
+      toast.success('Application declined');
+    }
+  };
   const toggleProgramActive = async (id, current) => {
     const res = await authFetch(`/api/programs/${id}`, { method: 'PUT', body: JSON.stringify({ isActive: !current }) });
     if (res.ok) {
@@ -891,6 +952,7 @@ export default function AdminPage() {
   const filteredPrograms = programs
     .filter(p => !programSearch || p.name.toLowerCase().includes(programSearch.toLowerCase()) || p.coachId?.name?.toLowerCase().includes(programSearch.toLowerCase()))
     .filter(p => programCityFilter === 'all' || (p.city || 'abuja') === programCityFilter);
+  const coachApplications = enquiries.filter(e => e.source === 'coach-application' && e.status === 'new');
 
   // ── Form field shorthands ──
   const fVal = (field) => form[field] ?? '';
@@ -2776,6 +2838,10 @@ export default function AdminPage() {
                             className={`btn-sm text-[9px] rounded-lg font-semibold px-2 py-1 ${c.isActive ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-600 border border-green-200'}`}>
                             {c.isActive ? 'Deactivate' : 'Activate'}
                           </button>
+                          <button onClick={() => generateInviteLink(c._id)}
+                            className="btn-sm text-[9px] bg-purple-50 text-purple-600 border border-purple-200 rounded-lg px-2 py-1 font-semibold hover:bg-purple-100 transition-colors">
+                            {c.inviteStatus === 'claimed' ? '✅ Claimed' : '🔗 Invite'}
+                          </button>
                         </div>
                       </div>
                     );
@@ -2815,6 +2881,43 @@ export default function AdminPage() {
                   </div>
                 );
               })()}
+
+              {/* Coach Applications */}
+              {!loadingData && coachApplications.length > 0 && (
+                <div className="mt-6">
+                  <h2 className="font-serif text-sm font-bold mb-3">Coach Applications ({coachApplications.length})</h2>
+                  <div className="space-y-2">
+                    {coachApplications.map(app => {
+                      let appData = {};
+                      try { appData = JSON.parse(app.message || '{}'); } catch {}
+                      const cat = categories.find(c => c.slug === appData.categorySlug);
+                      return (
+                        <div key={app._id} className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-sm">{app.parentName}</div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                {cat?.icon} {appData.categoryName || appData.categorySlug} · {appData.city || 'abuja'} · {appData.yearsExperience || '?'}y exp
+                              </div>
+                              <div className="text-[10px] text-slate-500">{app.email} · {app.phone}</div>
+                              {appData.title && <div className="text-[10px] text-slate-600 mt-1">{appData.title}</div>}
+                              {appData.bio && <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-2">{appData.bio}</div>}
+                              {appData.certifications && <div className="text-[10px] text-slate-400 mt-0.5">Certs: {appData.certifications}</div>}
+                              <div className="text-[9px] text-slate-300 mt-1">{ago(app.createdAt)}</div>
+                            </div>
+                            <div className="flex gap-1.5 shrink-0">
+                              <button onClick={() => approveCoachApplication(app)}
+                                className="btn-sm text-[9px] bg-emerald-500 text-white rounded-lg px-3 py-1.5 font-semibold hover:bg-emerald-600">Approve</button>
+                              <button onClick={() => declineCoachApplication(app._id)}
+                                className="btn-sm text-[9px] bg-red-50 text-red-600 border border-red-200 rounded-lg px-3 py-1.5 font-semibold hover:bg-red-100">Decline</button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -18,6 +18,9 @@ export const POST = handler(async (request) => {
       children: dbUser.children,
       membershipPaid: dbUser.membershipPaid,
       membershipDate: dbUser.membershipDate,
+      schoolId: dbUser.schoolId,
+      communityId: dbUser.communityId,
+      coachId: dbUser.coachId,
     },
   });
 });

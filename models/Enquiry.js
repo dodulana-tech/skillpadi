@@ -21,7 +21,7 @@ const EnquirySchema = new mongoose.Schema({
 
   source: {
     type: String,
-    enum: ['website', 'whatsapp', 'referral', 'social', 'school', 'community', 'school-partnership', 'community-partnership', 'impact-sponsor', 'lagos-waitlist', 'other'],
+    enum: ['website', 'whatsapp', 'referral', 'social', 'school', 'community', 'school-partnership', 'community-partnership', 'impact-sponsor', 'lagos-waitlist', 'coach-application', 'other'],
     default: 'website',
   },
 
